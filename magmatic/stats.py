@@ -1,10 +1,49 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any, Dict
 
 __all__ = (
+    'MemoryStats',
     'Stats',
 )
+
+
+class MemoryStats:
+    """Memory information about a given node.
+
+    Attributes
+    ----------
+    free: int
+        The amount of free memory on the node, in bytes.
+    used: int
+        The amount of memory the node is actively using, in bytes.
+    allocated: int
+        The amount of memory the node has allocated, in bytes.
+    reservable: int
+        The amount of memory the node is able to allocate, in bytes.
+    """
+
+    __slots__ = ('free', 'used', 'allocated', 'reservable')
+
+    def __init__(self, data: Dict[str, int]) -> None:
+        self.free: int = data['free']
+        self.used: int = data['used']
+        self.allocated: int = data['allocated']
+        self.reservable: int = data['reservable']
+
+    @property
+    def total(self) -> int:
+        """:class:`int`: The total amount of memory on the node, in bytes."""
+        return self.free + self.used + self.allocated + self.reservable
+
+    def __repr__(self) -> str:
+        free = self.free
+        used = self.used
+        allocated = self.allocated
+        reservable = self.reservable
+
+        return f'<MemoryStats {free=} {used=} {allocated=} {reservable=}>'
 
 
 class Stats:
@@ -18,38 +57,36 @@ class Stats:
         The amount of players currently connected to the node.
     playing_players: int
         The amount of players currently connected and playing audio on the node.
-    memory_free: int
-        The amount of free memory on the node, in bytes.
-    memory_used: int
-        The amount of memory the node is actively using, in bytes.
-    memory_allocated: int
-        The amount of memory the node has allocated, in bytes.
-    memory_reservable: int
-        The amount of memory the node can allocate, in bytes.
+    memory: :class:`.MemoryStats`
+        The memory information about the node.
     cpu_cores: int
         The amount of CPU cores the node is able to use.
     system_load: float
         The amount of load from the system.
     lavalink_load: float
         The amount of load from Lavalink.
+    frames_sent: int
+        The amount of frames sent to the node.
+    frames_nulled: int
+        The amount of frames nulled by the node.
+    frames_deficit: int
+        The amount of frames deficit by the node.
     penalty: float
         The amount of load-balancing penalty on the node.
     """
+
     __slots__ = (
         'uptime',
         'players', 
         'playing_players', 
-        'memory_free', 
-        'memory_used', 
-        'memory_allocated', 
-        'memory_reservable', 
+        'memory',
         'cpu_cores', 
         'system_load', 
         'lavalink_load', 
         'frames_sent',
         'frames_nulled',
         'frames_deficit',
-        'penalty'
+        'penalty',
     )
 
     def __init__(self, data: Dict[str, Any]) -> None:
@@ -57,22 +94,17 @@ class Stats:
 
         self.players: int = data['players']
         self.playing_players: int = data['playingPlayers']
-
-        memory = data['memory']
-        self.memory_free: int = memory['free']
-        self.memory_used: int = memory['used']
-        self.memory_allocated: int = memory['allocated']
-        self.memory_reservable: int = memory['reservable']
+        self.memory: MemoryStats = MemoryStats(data['memory'])
 
         cpu = data['cpu']
         self.cpu_cores: int = cpu['cores']
         self.system_load: float = cpu['systemLoad']
         self.lavalink_load: float = cpu['lavalinkLoad']
 
-        frame_stats = data.get('frameStats', {})
-        self.frames_sent: int = frame_stats.get('sent', -1)
-        self.frames_nulled: int = frame_stats.get('nulled', -1)
-        self.frames_deficit: int = frame_stats.get('deficit', -1)
+        frame_stats = data.get('frameStats', defaultdict(lambda: -1))
+        self.frames_sent: int = frame_stats['sent']
+        self.frames_nulled: int = frame_stats['nulled']
+        self.frames_deficit: int = frame_stats['deficit']
         self.penalty: float = self._calculate_penalty()
 
     def _calculate_penalty(self) -> float:
