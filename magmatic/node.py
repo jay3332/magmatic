@@ -3,13 +3,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, Dict, Optional, TYPE_CHECKING, TypeVar, Union
+from typing import Any, ClassVar, Dict, Optional, TYPE_CHECKING, TypeVar, Union
 
 from aiohttp import ClientSession, ClientWebSocketResponse, WSMsgType, WSServerHandshakeError
 from discord.backoff import ExponentialBackoff
 
 from magmatic.enums import OpCode
-from magmatic.errors import AuthorizationFailure, ConnectionFailure, HandshakeFailure
+from magmatic.errors import AuthorizationFailure, ConnectionFailure, HTTPException, HandshakeFailure
 from magmatic.stats import Stats
 
 if TYPE_CHECKING:
@@ -29,6 +29,8 @@ class ConnectionManager:
 
     This is used internally.
     """
+
+    REQUEST_MAX_TRIES: ClassVar[int] = 1
 
     def __init__(
         self,
@@ -95,7 +97,22 @@ class ConnectionManager:
         return self._ws is not None and not self._ws.closed
 
     async def connect(self, *, reconnect: bool = True) -> None:
-        """Connects to Lavalink."""
+        """Connects to Lavalink's websocket.
+
+        Parameters
+        ----------
+        reconnect: bool
+            Whether to reconnect if the websocket is closed. Defaults to ``True``.
+
+        Raises
+        ------
+        AuthorizationFailure
+            Failed to authorize with Lavalink. Your password is likely incorrect.
+        HandshakeFailure
+            Failed the initial handshake with Lavalink's websocket.
+        ConnectionFailure
+            Failed to connect to Lavalink.
+        """
         if self.is_connected():
             if not reconnect:
                 return
@@ -122,7 +139,16 @@ class ConnectionManager:
             raise ConnectionFailure(self.node, exc)
 
         log.info(f'[Node {self.node.identifier!r}]: Connected to Lavalink')
+        if self._listener and not self._listener.done():
+            self._listener.cancel()
+
         self._listener = self.loop.create_task(self.listen())
+
+        if not self.is_connected():
+            log.error(f'[Node {self.node.identifier!r}]: Immediately disconnected from Lavalink')
+            return
+
+        await self.send_resume()
 
     async def disconnect(self) -> None:
         """Disconnects the current connection from Lavalink."""
@@ -175,11 +201,16 @@ class ConnectionManager:
             self.loop.create_task(self.handle_message(message.json()))
     
     async def send(self, data: Dict[str, Any]) -> None:
-        """Sends a message to Lavalink via websocket."""
+        """Sends a message to Lavalink via websocket.
+
+        Parameters
+        ----------
+        data: dict[:class:`str`, Any]
+            The JSON payload represented as a :py:class:`dict`.
+        """
         await self._ws.send_json(data)
 
     async def send_voice_server_update(self, *, guild_id: int, session_id: int, event: Dict[str, Any]) -> None:
-        """Sends a voice server update payload to Lavalink."""
         await self.send({
             'op': 'voiceUpdate',
             'guildId': guild_id,
@@ -198,7 +229,6 @@ class ConnectionManager:
         no_replace: bool = False,
         pause: bool = False,
     ) -> None:
-        """Sends a play track payload to Lavalink."""
         data = {
             'op': 'play',
             'guildId': guild_id,
@@ -217,14 +247,12 @@ class ConnectionManager:
         await self.send(data)
 
     async def send_stop(self, *, guild_id: int) -> None:
-        """Sends a stop player request to Lavalink."""
         await self.send({
             'op': 'stop',
             'guildId': guild_id,
         })
 
     async def send_pause(self, *, guild_id: int, pause: bool = True) -> None:
-        """Sends a pause player request to Lavalink."""
         await self.send({
             'op': 'pause',
             'guildId': guild_id,
@@ -232,7 +260,6 @@ class ConnectionManager:
         })
 
     async def send_seek(self, *, guild_id: int, position: int) -> None:
-        """Sends a seek player request to Lavalink."""
         await self.send({
             'op': 'seek',
             'guildId': guild_id,
@@ -240,7 +267,6 @@ class ConnectionManager:
         })
 
     async def send_set_volume(self, *, guild_id: int, volume: int) -> None:
-        """Sends a set volume request to Lavalink."""
         await self.send({
             'op': 'volume',
             'guildId': guild_id,
@@ -248,11 +274,61 @@ class ConnectionManager:
         })
 
     async def send_destroy(self, *, guild_id: int) -> None:
-        """Sends a destroy player request to Lavalink."""
         await self.send({
             'op': 'destroy',
             'guildId': guild_id,
         })
+
+    async def send_resume(self) -> None:
+        await self.send({
+            'op': 'configureResuming',
+            'key': self._ws_resume_key,
+            'timeout': 60,
+        })
+
+    async def request(self, endpoint: str, **params: Any) -> Dict[str, Any]:
+        """|coro|
+
+        Sends a GET request to an endpoint on Lavalink's REST API.
+
+        Parameters
+        ----------
+        endpoint: str
+            The endpoint to send the request to.
+        **params: Any
+            The URL query parameters to send with the request.
+
+        Returns
+        -------
+        dict[:class:`str`, Any]
+            The JSON response from the request, serialized into a :py:class:`dict` object.
+
+        Raises
+        ------
+        HTTPException
+            An HTTP error occurred while sending the request.
+        """
+        backoff = ExponentialBackoff()
+
+        for i in range(self.REQUEST_MAX_TRIES):
+            async with self.session.get(
+                f'{self.http_url}/{endpoint}',
+                headers={'Authorization': self._password},
+                params=params,
+            ) as response:
+                if not response.ok:
+                    if i + 1 < self.REQUEST_MAX_TRIES:
+                        delay = backoff.delay()
+                        await asyncio.sleep(delay)
+
+                    continue
+
+                return await response.json()
+
+        try:
+            raise HTTPException(response)
+        except NameError:
+            raise RuntimeError(f'{self.__class__.__name__}.REQUEST_MAX_TRIES must be at least 1')
 
 
 class Node:
@@ -331,19 +407,61 @@ class Node:
         return self.connection._password
 
     async def connect(self) -> None:
-        """Connects this node to Lavalink."""
+        """|coro|
+
+        Connects this node to Lavalink.
+
+        Raises
+        ------
+        AuthorizationFailure
+            Failed to authorize with Lavalink. Your password is likely incorrect.
+        HandshakeFailure
+            Failed the initial handshake with Lavalink's websocket.
+        ConnectionFailure
+            Failed to connect to Lavalink.
+        """
         await self.connection.connect()
 
     async def disconnect(self) -> None:
-        """Disconnects this node from Lavalink and clears any data associated with it."""
+        """|coro|
+
+        Disconnects this node from Lavalink and clears any data associated with it.
+        """
         log.info(f'[Node {self.identifier!r}]: Disconnecting...')
         await self.connection.disconnect()
 
     async def destroy(self) -> None:
-        """Disconnects and removes this node from its associated :class:`.NodePool`."""
+        """|coro|
+
+        Disconnects and removes this node from its associated :class:`.NodePool`.
+        """
         log.info(f'[Node {self.identifier!r}]: Destroying node...')
 
         await self.disconnect()
+
+    async def request(self, endpoint: str, **params: Any) -> Dict[str, Any]:
+        """|coro|
+
+        Sends a GET request to an endpoint on Lavalink's REST API.
+
+        Parameters
+        ----------
+        endpoint: str
+            The endpoint to send the request to.
+        **params: Any
+            The URL query parameters to send with the request.
+
+        Returns
+        -------
+        dict[:class:`str`, Any]
+            The JSON response from the request, serialized into a :py:class:`dict` object.
+
+        Raises
+        ------
+        HTTPException
+            An HTTP error occurred while sending the request.
+        """
+        return await self.connection.request(endpoint, **params)
 
     def __repr__(self) -> str:
         return f'<Node {self.identifier!r}>'

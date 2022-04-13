@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 
 class OpCode(Enum):
-    """Represents an Op-code received from Lavalink's websocket.
+    """Represents an inbound Op-code received from Lavalink's websocket.
 
     This is only used internally and should rarely be used.
     """
@@ -21,3 +21,18 @@ class OpCode(Enum):
 
     # Aliases
     update = player_update
+
+
+class EventType(Enum):
+    """Represents the type of event received from Lavalink's websocket via the ``event`` op-code.
+
+    This is only used internally and should rarely be used.
+    """
+    if TYPE_CHECKING:
+        value: str
+
+    track_start = 'TrackStartEvent'
+    track_end = 'TrackEndEvent'
+    track_stuck = 'TrackStuckEvent'
+    track_exception = 'TrackExceptionEvent'
+    websocket_closed = 'WebSocketClosedEvent'
