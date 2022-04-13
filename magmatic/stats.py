@@ -35,6 +35,22 @@ class Stats:
     penalty: float
         The amount of load-balancing penalty on the node.
     """
+    __slots__ = (
+        'uptime',
+        'players', 
+        'playing_players', 
+        'memory_free', 
+        'memory_used', 
+        'memory_allocated', 
+        'memory_reservable', 
+        'cpu_cores', 
+        'system_load', 
+        'lavalink_load', 
+        'frames_sent',
+        'frames_nulled',
+        'frames_deficit',
+        'penalty'
+    )
 
     def __init__(self, data: Dict[str, Any]) -> None:
         self.uptime: int = data['uptime']
