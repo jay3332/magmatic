@@ -166,7 +166,10 @@ class ConnectionManager:
                 return
 
             self.loop.create_task(self.handle_message(message.json()))
-
+    
+    async def send(self, data: Dict[str, Any]) -> None:
+        """Sends a message to Lavalink server via websocket."""
+        await self._ws.send_json(data)
 
 class Node:
     """Represents a client which interfaces around a Lavalink node.
@@ -230,7 +233,93 @@ class Node:
         log.info(f'[Node {self.identifier!r}]: Destroying node...')
 
         await self.disconnect()
-        ...
+
+    async def send_voice_server_update(self, guild_id: int, session_id: int, event: Dict[str, Any]) -> None:
+        """Sends a voice server update to Lavalink."""
+        await self._connection.send({
+            'op': 'voiceUpdate',
+            'guildId': guild_id,
+            'sessionId': session_id,
+            'event': event,
+        })
+    
+    async def send_play_track(
+        self, 
+        guild_id: int, 
+        track: str,
+        start_time: int = 0, 
+        end_time: int | None = None, 
+        volume: int | None = None, 
+        no_replace: bool = False, 
+        pause: bool = False
+    ) -> None:
+        """
+        Sends a play track request to Lavalink.
+        """
+        data = {
+            'op': 'play',
+            'guildId': guild_id,
+            'track': track,
+            'startTime': start_time,
+            'noReplace': no_replace,
+            'pause': pause,
+        }
+
+        if end_time is not None:
+            data['endTime'] = end_time
+        
+        if volume is not None:
+            data['volume'] = volume
+        
+        await self._connection.send(data)
+    
+    async def send_stop(self, guild_id: int) -> None:
+        """
+        Sends a stop player request to Lavalink.
+        """
+        await self._connection.send({
+            'op': 'stop',
+            'guildId': guild_id,
+        })
+    
+    async def send_pause(self, guild_id: int, pause: bool = True) -> None:
+        """
+        Sends a pause player request to Lavalink.
+        """
+        await self._connection.send({
+            'op': 'pause',
+            'guildId': guild_id,
+            'pause': pause,
+        })
+    
+    async def send_seek(self, guild_id: int, position: int) -> None:
+        """
+        Sends a seek player request to Lavalink.
+        """
+        await self._connection.send({
+            'op': 'seek',
+            'guildId': guild_id,
+            'position': position,
+        })
+    
+    async def send_set_volume(self, guild_id: int, volume: int) -> None:
+        """
+        Sends a set volume request to Lavalink.
+        """
+        await self._connection.send({
+            'op': 'volume',
+            'guildId': guild_id,
+            'volume': volume,
+        })
+    
+    async def send_destroy(self, guild_id: int) -> None:
+        """
+        Sends a destroy player request to Lavalink.
+        """
+        await self._connection.send({
+            'op': 'destroy',
+            'guildId': guild_id,
+        })
 
     def __repr__(self) -> str:
         return f'<Node {self.identifier!r}>'
