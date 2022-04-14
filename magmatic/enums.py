@@ -1,10 +1,10 @@
 from enum import Enum
+from typing import TYPE_CHECKING
 
 __all__ = (
     'OpCode',
+    'EventType',
 )
-
-from typing import TYPE_CHECKING
 
 
 class OpCode(Enum):
