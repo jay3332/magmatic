@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aiohttp import ClientResponse
 
     from .node import Node
+    from .pool import NodePool
 
 __all__ = (
     'MagmaticException',
@@ -73,3 +74,64 @@ class AuthorizationFailure(MagmaticException):
         self.node: Node = node
 
         super().__init__(f'Invalid authorization passed for node {node.identifier!r}')
+
+
+class NodeConflict(MagmaticException):
+    """Raised when there is a conflict between node identifiers.
+
+    Attributes
+    ----------
+    pool: :class:`.NodePool`
+        The node pool that contains the conflicting nodes.
+    identifier: :class:`str`
+        The identifier of the conflicting node.
+    """
+
+    def __init__(self, pool: NodePool, identifier: str) -> None:
+        self.pool: NodePool = pool
+        self.identifier: str = identifier
+
+        super().__init__(f'Node identifier {identifier!r} is already in use.')
+
+
+class NoAvailableNodes(MagmaticException):
+    """Raised when there are no available nodes in a given :class:`.NodePool`.
+
+    Attributes
+    ----------
+    pool: :class:`.NodePool`
+        The node pool that contains no nodes.
+    """
+
+    def __init__(self, pool: NodePool) -> None:
+        self.pool: NodePool = pool
+
+        super().__init__('No available nodes on this pool.')
+
+
+class NoMatches(MagmaticException):
+    """Raised when there are no node matches.
+
+    Attributes
+    ----------
+    pool: :class:`.NodePool`
+        The node pool that matches could not be found from.
+    identifier: Optional[:class:`str`]
+        The identifier attempted to be matched. Could be ``None`` if no identifier was provided.
+    region: Optional[:class:`str`]
+        The region attempted to be matched. Could be ``None`` if no region was provided.
+    """
+
+    def __init__(self, pool: NodePool, identifier: Optional[str], region: Optional[str]) -> None:
+        self.pool: NodePool = pool
+        self.identifier: Optional[str] = identifier
+        self.region: Optional[str] = region
+
+        entities = []
+        if identifier is not None:
+            entities.append(f'identifier {identifier!r}')
+
+        if region is not None:
+            entities.append(f'voice region {region!r}')
+
+        super().__init__(f'No node with {" and ".join(entities)} could be found in this pool.')

@@ -3,19 +3,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, ClassVar, Dict, Optional, TYPE_CHECKING, TypeVar, Union
+from typing import Any, ClassVar, Dict, Generic, List, Optional, TypeVar, Union
 
+import discord
 from aiohttp import ClientSession, ClientWebSocketResponse, WSMsgType, WSServerHandshakeError
 from discord.backoff import ExponentialBackoff
 
-from magmatic.enums import OpCode
-from magmatic.errors import AuthorizationFailure, ConnectionFailure, HTTPException, HandshakeFailure
-from magmatic.stats import Stats
+from .enums import OpCode
+from .errors import AuthorizationFailure, ConnectionFailure, HTTPException, HandshakeFailure
+from .player import Player
+from .stats import Stats
 
-if TYPE_CHECKING:
-    from discord import Client
-
-    ClientT = TypeVar('ClientT', bound=Client)
+ClientT = TypeVar('ClientT', bound=discord.Client)
 
 __all__ = (
     'Node',
@@ -45,7 +44,7 @@ class ConnectionManager:
         prefer_http: bool = False,
         node: Node,
     ) -> None:
-        self.node: Node = node
+        self.node: Node[Any] = node
         self.host: str = host
         self.port: int = port
         self.loop: asyncio.AbstractEventLoop = loop
@@ -81,6 +80,11 @@ class ConnectionManager:
     @property
     def headers(self) -> Dict[str, str]:
         """dict[:class:`str`, :class:`str`]: The headers to use when making a request to Lavalink."""
+        if self.node.bot.user is None:
+            raise RuntimeError(
+                'Cannot send requests without a bot user ID. Make sure you are only connecting after you log in.',
+            )
+
         result = {
             'User-Id': str(self.node.bot.user.id),
             'Client-Name': 'magmatic',
@@ -117,6 +121,7 @@ class ConnectionManager:
             if not reconnect:
                 return
 
+            assert self._ws is not None
             await self._ws.close()
 
         try:
@@ -155,7 +160,8 @@ class ConnectionManager:
         if self._listener and not self._listener.done():
             self._listener.cancel()
 
-        await self._ws.close()
+        if self._ws is not None:
+            await self._ws.close()
 
     async def handle_message(self, data: Dict[str, Any]) -> None:
         try:
@@ -169,7 +175,7 @@ class ConnectionManager:
 
         if op is OpCode.stats:
             stats = data['stats']
-            self.node.stats = Stats(stats)
+            self.node._stats = Stats(stats)
 
             log.debug(f'[Node {self.node.identifier!r}]: Updated stats: {stats!r}')
 
@@ -194,7 +200,9 @@ class ConnectionManager:
                     f'[Node {self.node.identifier!r}]: Internal error occurred in Lavalink; terminating connection.',
                 )
 
-                self._listener.cancel()
+                if self._listener is not None:
+                    self._listener.cancel()
+
                 await self.disconnect()
                 return
 
@@ -208,6 +216,9 @@ class ConnectionManager:
         data: dict[:class:`str`, Any]
             The JSON payload represented as a :py:class:`dict`.
         """
+        if self._ws is None:
+            raise RuntimeError('no running websocket to send message to')
+
         await self._ws.send_json(data)
 
     async def send_voice_server_update(self, *, guild_id: int, session_id: int, event: Dict[str, Any]) -> None:
@@ -224,8 +235,8 @@ class ConnectionManager:
         guild_id: int,
         track: str,
         start_time: int = 0,
-        end_time: int | None = None,
-        volume: int | None = None,
+        end_time: Optional[int] = None,
+        volume: Optional[int] = None,
         no_replace: bool = False,
         pause: bool = False,
     ) -> None:
@@ -326,12 +337,12 @@ class ConnectionManager:
                 return await response.json()
 
         try:
-            raise HTTPException(response)
+            raise HTTPException(response)  # type: ignore
         except NameError:
             raise RuntimeError(f'{self.__class__.__name__}.REQUEST_MAX_TRIES must be at least 1')
 
 
-class Node:
+class Node(Generic[ClientT]):
     """Represents a client which interfaces around a Lavalink node.
 
     These are not to be constructed manually, rather they should be created via
@@ -352,28 +363,33 @@ class Node:
         *,
         bot: ClientT,
         host: str = '127.0.0.1',
-        port: Union[int, str] = 3030,
+        port: Union[int, str] = 2333,
         password: Optional[str] = None,
         region: Optional[str] = None,
         identifier: Optional[str] = None,
         session: Optional[ClientSession] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None,
         prefer_http: bool = False,
+        secure: bool = False,
     ) -> None:
         self.bot: ClientT = bot
         self.identifier: str = identifier or os.urandom(8).hex()
         self.region: Optional[str] = region
 
         self._loop: Optional[asyncio.AbstractEventLoop] = loop
-        self._connection: Optional[ConnectionManager] = ConnectionManager(
+        self._connection: ConnectionManager = ConnectionManager(
             host=host,
             port=int(port),
             password=password,
             loop=self.loop,
             session=session,
             prefer_http=prefer_http,
-            node=self
+            secure=secure,
+            node=self,
         )
+
+        self._players: List[Player] = []
+        self._stats: Optional[Stats] = None
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
@@ -387,6 +403,16 @@ class Node:
     def connection(self) -> ConnectionManager:
         """:class:`ConnectionManager`: The :class:`ConnectionManager` managing this node's connection with Lavalink."""
         return self._connection
+
+    @property
+    def players(self) -> List[Player]:
+        """list[:class:`Player`]: The players handled by this node."""
+        return self._players
+
+    @property
+    def stats(self) -> Optional[Stats]:
+        """Optional[:class:`.Stats`]: Statistical information about this node, received from Lavalink."""
+        return self._stats
 
     @property
     def host(self) -> str:
@@ -406,10 +432,10 @@ class Node:
         """
         return self.connection._password
 
-    async def connect(self) -> None:
+    async def start(self) -> None:
         """|coro|
 
-        Connects this node to Lavalink.
+        Starts this node and connects it to Lavalink.
 
         Raises
         ------
