@@ -97,6 +97,8 @@ class ConnectionManager:
     @property
     def headers(self) -> Dict[str, str]:
         """dict[:class:`str`, :class:`str`]: The headers to use when making a request to Lavalink."""
+        from . import __version__
+
         if self.node.bot.user is None:
             raise RuntimeError(
                 'Cannot send requests without a bot user ID. Make sure you are only connecting after you log in.',
@@ -104,7 +106,7 @@ class ConnectionManager:
 
         result = {
             'User-Id': str(self.node.bot.user.id),
-            'Client-Name': 'magmatic',
+            'Client-Name': 'magmatic/' + __version__,
             'Resume-Key': self._ws_resume_key,
         }
 
