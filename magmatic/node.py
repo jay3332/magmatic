@@ -81,9 +81,11 @@ class ConnectionManager:
     @property
     def headers(self) -> Dict[str, str]:
         """dict[:class:`str`, :class:`str`]: The headers to use when making a request to Lavalink."""
+        from . import __version__
+
         result = {
             'User-Id': str(self.node.bot.user.id),
-            'Client-Name': 'magmatic',
+            'Client-Name': 'magmatic/' + __version__,
             'Resume-Key': self._ws_resume_key,
         }
 
