@@ -1,26 +1,41 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
-from typing import Any, ClassVar, Dict, Generic, List, Optional, TypeVar, Union
+from typing import Any, ClassVar, Dict, Generic, List, Literal, Optional, Protocol, TYPE_CHECKING, TypeVar, Union
 
 import discord
 from aiohttp import ClientSession, ClientWebSocketResponse, WSMsgType, WSServerHandshakeError
 from discord.backoff import ExponentialBackoff
 
 from .enums import OpCode
-from .errors import AuthorizationFailure, ConnectionFailure, HTTPException, HandshakeFailure
+from .errors import AuthorizationFailure, ConnectionFailure, HTTPException, HandshakeFailure, PlayerNotFound
 from .player import Player
 from .stats import Stats
 
+if TYPE_CHECKING:
+    from discord.abc import Snowflake
+
+    RequestMethod = Literal['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+
 ClientT = TypeVar('ClientT', bound=discord.Client)
+JsonT = TypeVar('JsonT', bound=Union[Dict[str, Any], List[Any], Any])
 
 __all__ = (
     'Node',
 )
 
 log: logging.Logger = logging.getLogger(__name__)
+
+
+class JSONSerializer(Protocol[JsonT]):
+    def loads(self, data: str) -> JsonT:
+        ...
+
+    def dumps(self, data: JsonT) -> str:
+        ...
 
 
 class ConnectionManager:
@@ -42,6 +57,7 @@ class ConnectionManager:
         session: Optional[ClientSession] = None,
         heartbeat_interval: float = 30.0,
         prefer_http: bool = False,
+        serializer: JSONSerializer[Dict[str, Any]] = json,
         node: Node,
     ) -> None:
         self.node: Node[Any] = node
@@ -61,6 +77,7 @@ class ConnectionManager:
         self._ws: Optional[ClientWebSocketResponse] = None
         self._ws_resume_key: str = os.urandom(8).hex()
         self._listener: Optional[asyncio.Task] = None
+        self._serializer: JSONSerializer[Dict[str, Any]] = serializer
 
     @property
     def origin(self) -> str:
@@ -178,6 +195,23 @@ class ConnectionManager:
             self.node._stats = Stats(stats)
 
             log.debug(f'[Node {self.node.identifier!r}]: Updated stats: {stats!r}')
+            return
+
+        if 'guildId' not in data:
+            log.warning(f'[Node {self.node.identifier!r}]: Invalid message received: {data!r}')
+            return
+
+        guild_id = int(data['guildId'])
+        try:
+            player = self.node.get_player(discord.Object(id=guild_id), fail_if_not_exists=True)
+        except PlayerNotFound:
+            return
+
+        if op is OpCode.player_update:
+            state = data['state']
+            log.debug(f'[Node {self.node.identifier!r}]: Updating player state: {state!r}')
+
+            player._update_state(state)
 
     async def listen(self) -> None:
         backoff = ExponentialBackoff(base=3)
@@ -206,7 +240,7 @@ class ConnectionManager:
                 await self.disconnect()
                 return
 
-            self.loop.create_task(self.handle_message(message.json()))
+            self.loop.create_task(self.handle_message(message.json(loads=self._serializer.loads)))
     
     async def send(self, data: Dict[str, Any]) -> None:
         """Sends a message to Lavalink via websocket.
@@ -219,7 +253,11 @@ class ConnectionManager:
         if self._ws is None:
             raise RuntimeError('no running websocket to send message to')
 
-        await self._ws.send_json(data)
+        raw = self._serializer.dumps(data)
+        if isinstance(raw, bytes):
+            raw = raw.decode('utf-8')
+
+        await self._ws.send_str(raw)
 
     async def send_voice_server_update(self, *, guild_id: int, session_id: int, event: Dict[str, Any]) -> None:
         await self.send({
@@ -277,7 +315,7 @@ class ConnectionManager:
             'position': position,
         })
 
-    async def send_set_volume(self, *, guild_id: int, volume: int) -> None:
+    async def send_volume(self, *, guild_id: int, volume: int) -> None:
         await self.send({
             'op': 'volume',
             'guildId': guild_id,
@@ -297,13 +335,15 @@ class ConnectionManager:
             'timeout': 60,
         })
 
-    async def request(self, endpoint: str, **params: Any) -> Dict[str, Any]:
+    async def request(self, method: RequestMethod, endpoint: str, **params: Any) -> Dict[str, Any]:
         """|coro|
 
-        Sends a GET request to an endpoint on Lavalink's REST API.
+        Sends a request to an endpoint on Lavalink's REST API.
 
         Parameters
         ----------
+        method: str
+            The HTTP request method to use, e.g. ``'GET'``.
         endpoint: str
             The endpoint to send the request to.
         **params: Any
@@ -320,13 +360,15 @@ class ConnectionManager:
             An HTTP error occurred while sending the request.
         """
         backoff = ExponentialBackoff()
+        kwargs = dict(
+            method=method,
+            url=f'{self.http_url}/{endpoint}',
+            headers={'Authorization': self._password},
+            params=params,
+        )
 
         for i in range(self.REQUEST_MAX_TRIES):
-            async with self.session.get(
-                f'{self.http_url}/{endpoint}',
-                headers={'Authorization': self._password},
-                params=params,
-            ) as response:
+            async with self.session.request(**kwargs) as response:
                 if not response.ok:
                     if i + 1 < self.REQUEST_MAX_TRIES:
                         delay = backoff.delay()
@@ -334,7 +376,7 @@ class ConnectionManager:
 
                     continue
 
-                return await response.json()
+                return await response.json(loads=self._serializer.loads)
 
         try:
             raise HTTPException(response)  # type: ignore
@@ -371,6 +413,7 @@ class Node(Generic[ClientT]):
         loop: Optional[asyncio.AbstractEventLoop] = None,
         prefer_http: bool = False,
         secure: bool = False,
+        serializer: JSONSerializer[Dict[str, Any]] = json,
     ) -> None:
         self.bot: ClientT = bot
         self.identifier: str = identifier or os.urandom(8).hex()
@@ -385,10 +428,11 @@ class Node(Generic[ClientT]):
             session=session,
             prefer_http=prefer_http,
             secure=secure,
+            serializer=serializer,
             node=self,
         )
 
-        self._players: List[Player] = []
+        self._players: Dict[int, Player] = {}
         self._stats: Optional[Stats] = None
 
     @property
@@ -406,8 +450,13 @@ class Node(Generic[ClientT]):
 
     @property
     def players(self) -> List[Player]:
-        """list[:class:`Player`]: The players handled by this node."""
-        return self._players
+        """list[:class:`Player`]: A list of the players handled by this node."""
+        return list(self._players.values())
+
+    @property
+    def player_count(self) -> int:
+        """:py:class:`int`: The number of players handled by this node."""
+        return len(self._players)
 
     @property
     def stats(self) -> Optional[Stats]:
@@ -431,6 +480,41 @@ class Node(Generic[ClientT]):
         If no password was set, this will return ``None``.
         """
         return self.connection._password
+
+    def get_player(self, guild: Snowflake, *, fail_if_not_exists: bool = False) -> Player:
+        """Returns the :class:`.Player` associated with the given guild.
+
+        If ``fail_if_not_exists`` is ``False`` and the player does not exist, one is created.
+
+        Parameters
+        ----------
+        guild: :class:`discord.abc.Snowflake`
+            The guild to get the player for.
+
+            Could be a :class:`snowflake <discord.abc.Snowflake>`-like object,
+            such as :class:`discord.Object`, if you cannot resolve the full guild object yet.
+        fail_if_not_exists: :class:`bool`
+            Whether to raise an exception if the player does not exist.
+
+            Defaults to ``False``.
+
+        Returns
+        -------
+        :class:`.Player`
+            The player associated with the given guild.
+
+        Raises
+        ------
+        PlayerNotFound
+            ``fail_if_not_exists`` is ``True`` and the player does not exist.
+        """
+        if guild.id not in self._players:
+            if fail_if_not_exists:
+                raise PlayerNotFound(self, guild)
+
+            self._players[guild.id] = Player(node=self, guild=guild)
+
+        return self._players[guild.id]
 
     async def start(self) -> None:
         """|coro|
@@ -465,13 +549,15 @@ class Node(Generic[ClientT]):
 
         await self.disconnect()
 
-    async def request(self, endpoint: str, **params: Any) -> Dict[str, Any]:
+    async def request(self, method: RequestMethod, endpoint: str, **params: Any) -> Dict[str, Any]:
         """|coro|
 
-        Sends a GET request to an endpoint on Lavalink's REST API.
+        Sends a request to an endpoint on Lavalink's REST API.
 
         Parameters
         ----------
+        method: str
+            The HTTP request method to use, e.g. ``'GET'``.
         endpoint: str
             The endpoint to send the request to.
         **params: Any
@@ -487,7 +573,7 @@ class Node(Generic[ClientT]):
         HTTPException
             An HTTP error occurred while sending the request.
         """
-        return await self.connection.request(endpoint, **params)
+        return await self.connection.request(method, endpoint, **params)
 
     def __repr__(self) -> str:
         return f'<Node {self.identifier!r}>'

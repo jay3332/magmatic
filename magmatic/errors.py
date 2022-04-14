@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Optional, TYPE_CHECKING
 
+from discord.abc import Snowflake
+
 if TYPE_CHECKING:
     from aiohttp import ClientResponse
 
@@ -135,3 +137,21 @@ class NoMatches(MagmaticException):
             entities.append(f'voice region {region!r}')
 
         super().__init__(f'No node with {" and ".join(entities)} could be found in this pool.')
+
+
+class PlayerNotFound(MagmaticException):
+    """Raised when a :class:`.Player` is not found via :meth:`.Node.get_player`.
+
+    Attributes
+    ----------
+    node: :class:`.Node`
+        The node in which the player was not found.
+    guild: :class:`discord.abc.Snowflake`
+        The guild/snowflake object passed into :meth:`.Node.get_player`.
+    """
+
+    def __init__(self, node: Node, guild: Snowflake) -> None:
+        self.node: Node = node
+        self.guild: Snowflake = guild
+
+        super().__init__(f'Player for guild {guild!r} not found')

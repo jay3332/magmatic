@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any, Awaitable, Dict, Final, Generic, Iterator, List, Optional, TYPE_CHECKING, TypeVar, Union
 
 from discord import Client
 from discord.utils import copy_doc
 
-from .errors import NoAvailableNodes, NoMatches, NodeConflict
+from .errors import NoAvailableNodes, NoMatches, NodeConflict, PlayerNotFound
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
+    from discord.abc import Snowflake
 
-    from .node import Node
+    from .node import JSONSerializer, Node
+    from .player import Player
 
 ClientT = TypeVar('ClientT', bound=Client)
 
@@ -82,6 +85,7 @@ class NodePool(Generic[ClientT]):
         loop: Optional[asyncio.AbstractEventLoop] = None,
         prefer_http: bool = False,
         secure: bool = False,
+        serializer: JSONSerializer[Dict[str, Any]] = json,
     ) -> Node[ClientT]:
         """Creates a new :class:`.Node` and adds it to the pool.
 
@@ -120,6 +124,11 @@ class NodePool(Generic[ClientT]):
             Only set this to ``True`` if the given ``host`` is remote.
 
             Defaults to ``False``.
+        serializer
+            An object/module with two methods: ``loads`` and ``dumps`` which serializes
+            and deserializes JSON data.
+
+            Defaults to the standard :module:`json` module.
 
         Returns
         -------
@@ -148,6 +157,7 @@ class NodePool(Generic[ClientT]):
             loop=loop,
             prefer_http=prefer_http,
             secure=secure,
+            serializer=serializer,
         )
         self._nodes[identifier] = node
         return node
@@ -165,6 +175,7 @@ class NodePool(Generic[ClientT]):
         loop: Optional[asyncio.AbstractEventLoop] = None,
         prefer_http: bool = False,
         secure: bool = False,
+        serializer: JSONSerializer[Dict[str, Any]] = json,
     ) -> Node[ClientT]:
         """|coro|
 
@@ -205,6 +216,11 @@ class NodePool(Generic[ClientT]):
             Only set this to ``True`` if the given ``host`` is remote.
 
             Defaults to ``False``.
+        serializer
+            An object/module with two methods: ``loads`` and ``dumps`` which serializes
+            and deserializes JSON data.
+
+            Defaults to the standard :module:`json` module.
 
         Returns
         -------
@@ -227,6 +243,7 @@ class NodePool(Generic[ClientT]):
             loop=loop,
             prefer_http=prefer_http,
             secure=secure,
+            serializer=serializer,
         )
         await node.start()
         return node
@@ -268,9 +285,42 @@ class NodePool(Generic[ClientT]):
             nodes = self.walk_nodes()
 
         try:
-            return sorted(nodes, key=lambda node: len(node.players))[0]
+            return sorted(nodes, key=lambda node: node.player_count)[0]
         except IndexError:
             raise NoMatches(self, identifier, region)
+
+    def get_player(self, guild: Snowflake, *, node: Optional[Node[ClientT]] = None) -> Optional[Player[ClientT]]:
+        """Gets the player for the given guild.
+
+        If no player is found, one will be created automatically on the given node.
+
+        Parameters
+        ----------
+        guild: :class:`int`
+            The guild to get the player for.
+
+            Could be a :class:`snowflake <discord.abc.Snowflake>`-like object,
+            such as :class:`discord.Object`, if you cannot resolve the full guild object yet.
+        node: Optional[:class:`.Node`]
+            The node to get the player from.
+
+            If left as ``None``, the node will be determined automatically.
+
+        Returns
+        -------
+        :class:`.Player`
+            The player for the guild.
+        """
+        if node is None:
+            for node in self.walk_nodes():
+                try:
+                    return node.get_player(guild, fail_if_not_exists=True)
+                except PlayerNotFound:
+                    continue
+
+            node = self.get_node()
+
+        return node.get_player(guild)
 
     async def destroy(self) -> None:
         """|coro|
@@ -304,6 +354,7 @@ def create_node(
     loop: Optional[asyncio.AbstractEventLoop] = None,
     prefer_http: bool = False,
     secure: bool = False,
+    serializer: JSONSerializer[Dict[str, Any]] = json,
 ) -> Node[ClientT]:
     return DefaultNodePool.create_node(
         bot=bot,
@@ -316,6 +367,7 @@ def create_node(
         loop=loop,
         prefer_http=prefer_http,
         secure=secure,
+        serializer=serializer,
     )
 
 
@@ -332,6 +384,7 @@ def start_node(
     loop: Optional[asyncio.AbstractEventLoop] = None,
     prefer_http: bool = False,
     secure: bool = False,
+    serializer: JSONSerializer[Dict[str, Any]] = json,
 ) -> Awaitable[Node[ClientT]]:
     return DefaultNodePool.start_node(
         bot=bot,
@@ -344,6 +397,7 @@ def start_node(
         loop=loop,
         prefer_http=prefer_http,
         secure=secure,
+        serializer=serializer,
     )
 
 
@@ -355,3 +409,8 @@ def add_node(node: Node[Any], *, identifier: str = None) -> None:
 @copy_doc(NodePool.get_node)
 def get_node(identifier: Optional[str] = None, *, region: Optional[str] = None) -> Node[Any]:
     return DefaultNodePool.get_node(identifier=identifier, region=region)
+
+
+@copy_doc(NodePool.get_player)
+def get_player(guild: Snowflake, *, node: Optional[Node[ClientT]] = None) -> Optional[Player[ClientT]]:
+    return DefaultNodePool.get_player(guild, node=node)

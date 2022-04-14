@@ -75,6 +75,11 @@ class Player(VoiceProtocol, Generic[ClientT]):
         self.node: Node[ClientT] = node
         self.guild: Snowflake = guild
 
+        self._paused: bool = False
+        self._volume: int = 100
+
+        self._previous_update_time: float = 0
+        self._previous_position: float = 0
         self._voice_server_data: Dict[str, Any] = {}
 
         super().__init__(client, channel)
@@ -90,7 +95,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
         # TODO: destroy the player - most likely bot was kicked during the connection process, which is super rare.
         raise RuntimeError(
             f'Could not upgrade partial guild with ID {self.guild.id} into a full Guild object. '
-            'Try passing in the actual guild object instead.',
+            'Try passing in the actual guild object instead, or enabling guild intents.',
         )
 
     @property
@@ -111,9 +116,38 @@ class Player(VoiceProtocol, Generic[ClientT]):
         """
         return self.channel and self.channel.id
 
+    @property
+    def voice(self) -> Optional[discord.VoiceState]:
+        """Optional[:class:`discord.VoiceState`]: The voice state associated with this player.
+
+        This is ``None`` if the player is not connected to a voice channel.
+        """
+        if not self.is_connected():
+            return None
+
+        assert isinstance(self.guild, discord.Guild)
+        return self.guild.me.voice
+
+    @property
+    def volume(self) -> int:
+        """:class:`int`: The current volume of the player."""
+        return self._volume
+
     def is_connected(self) -> bool:
         """:class:`bool`: Returns whether the player is connected to a voice channel."""
-        return self.channel is not None
+        return (
+            self.channel is not None
+            and isinstance(self.guild, discord.Guild)
+            and self.guild.me.voice.channel is not None
+        )
+
+    def is_self_deafened(self) -> bool:
+        """:class:`bool`: Returns whether the player's voice state is self-deafened."""
+        return self.voice is not None and self.voice.self_deaf
+
+    def is_paused(self) -> bool:
+        """:class:`bool`: Returns whether the player is paused."""
+        return self._paused
 
     async def _update_voice_data(self, **data: Any) -> None:
         log.debug(f'[Node {self.node.identifier!r}] Updating voice data for player {self!r}')
@@ -126,6 +160,13 @@ class Player(VoiceProtocol, Generic[ClientT]):
             **self._voice_server_data,
             **data,
         )
+
+    def _reset_state(self) -> None:
+        self._previous_update_time = self._previous_position = 0
+
+    def _update_state(self, data: Dict[str, Any]) -> None:
+        self._previous_update_time = data['time'] / 1000
+        self._previous_position = data.get('position', 0) / 1000
 
     async def on_voice_server_update(self, data: VoiceServerUpdate) -> None:
         self._voice_server_data['event'] = data
@@ -147,7 +188,14 @@ class Player(VoiceProtocol, Generic[ClientT]):
 
         await self._update_voice_data(event=data)
 
-    async def connect(self, channel: Optional[VocalGuildChannel] = None, *, timeout: float = MISSING, reconnect: bool = MISSING) -> None:
+    async def connect(
+        self,
+        channel: Optional[VocalGuildChannel] = None,
+        *,
+        timeout: float = 60.0,
+        reconnect: bool = False,
+        self_deaf: bool = False,
+    ) -> None:
         """|coro|
 
         Connects to the voice channel associated with this player. This is usually called internally.
@@ -156,15 +204,186 @@ class Player(VoiceProtocol, Generic[ClientT]):
         ----------
         channel: Optional[Union[:class:`discord.VoiceChannel`, :class:`discord.StageChannel`]]
             The voice channel to connect to.
+        timeout: :class:`float`
+            The timeout in seconds to wait for connection. Defaults to 60 seconds.
+        reconnect: :class:`bool`
+            Whether to automatically attempt reconnecting if a part of the handshake fails
+            or the gateway goes down.
+
+            Defaults to ``False``.
+        self_deaf: :class:`bool`
+            Whether to self-deafen upon connecting. Defaults to ``False``.
+
+        Raises
+        ------
+        RuntimeError
+            The given guild was not a complete :class:`discord.Guild` object,
+            and the guild could not be resolved upon connection.
+
+            If this happens, try passing in the actual guild object instead, or enabling guild intents.
         """
         if channel is not None:
+            if self.channel == channel and self.is_connected() and self.is_self_deafened() is self_deaf:
+                return
+
             self.channel = channel
 
         self._upgrade_guild()
         assert isinstance(self.guild, discord.Guild)
 
         log.debug(f'[Node {self.node.identifier!r}] Connecting to voice channel with ID {self.channel_id!r}')
+        await self.guild.change_voice_state(channel=self.channel, self_deaf=self_deaf)
+
+    async def disconnect(self, *, force: bool = False, destroy: bool = True) -> None:
+        """|coro|
+
+        Disconnects from the voice channel associated with this player.
+
+        Parameters
+        ----------
+        force: :class:`bool`
+            Whether to force disconnection.
+        destroy: :class:`bool`
+            Whether to destroy the player. Defaults to ``True``.
+
+            If you would like the player state to persist after disconnection, set this to ``False``.
+
+        Raises
+        ------
+        RuntimeError
+            The given guild was not a complete :class:`discord.Guild` object,
+            and the guild could not be resolved upon connection.
+
+            If this happens, try passing in the actual guild object instead, or enabling guild intents.
+        """
+        if not self.is_connected():
+            return
+
+        try:
+            self._upgrade_guild()
+            assert isinstance(self.guild, discord.Guild)
+
+            log.debug(f'[Node {self.node.identifier!r}] Disconnecting from voice channel with ID {self.channel_id!r}')
+            await self.guild.change_voice_state(channel=None)
+        finally:
+            if destroy:
+                await self.destroy(disconnect=False)
+            else:
+                # Clean-up the voice state regardless
+                self.cleanup()
+
+    async def destroy(self, *, disconnect: bool = True) -> None:
+        """|coro|
+
+        Destroys the player and cleans up any associated resources.
+
+        Parameters
+        ----------
+        disconnect: :class:`bool`
+            Whether to attempt to disconnect from voice. Defaults to ``True``.
+        """
+        try:
+            if disconnect:
+                await self.disconnect(force=True, destroy=False)
+        finally:
+            log.debug(f'[Node {self.node.identifier!r}] Destroying player with guild ID {self.guild_id}')
+            await self.node.connection.send_destroy(guild_id=self.guild_id)
+
+            self.node._players.pop(self.guild_id, None)
+            self.cleanup()
+
+    # This is really similar to Player.connect, we could possibly merge the two in the future.
+    async def move_to(self, channel: VocalGuildChannel) -> None:
+        """|coro|
+
+        Moves the player to the given voice channel.
+
+        Parameters
+        ----------
+        channel: Union[:class:`discord.VoiceChannel`, :class:`discord.StageChannel`]
+            The channel to move to.
+
+        Raises
+        ------
+        RuntimeError
+            The given guild was not a complete :class:`discord.Guild` object,
+            and the guild could not be resolved upon connection.
+
+            If this happens, try passing in the actual guild object instead, or enabling guild intents.
+        """
+        if not self.is_connected():
+            return await self.connect(channel=channel)
+
+        if self.channel == channel:
+            return
+
+        self._upgrade_guild()
+        assert isinstance(self.guild, discord.Guild)
+
+        log.debug(f'[Node {self.node.identifier!r}] Moving player to voice channel with ID {channel.id!r}')
+
+        self.channel = channel
         await self.guild.change_voice_state(channel=self.channel)
+
+    async def set_pause(self, pause: bool) -> None:
+        """|coro|
+
+        Sets the paused state of the player.
+
+        Parameters
+        ----------
+        pause: :class:`bool`
+            The new paused state of the player. Set to ``True`` to pause; ``False`` to resume.
+        """
+        await self.node.connection.send_pause(guild_id=self.guild_id, pause=bool(pause))
+        self._paused = pause
+
+        log.info(f'[Node {self.node.identifier!r}] Paused state of player with guild ID {self.guild_id} set to {pause}')
+
+    async def toggle_pause(self) -> None:
+        """|coro|
+
+        Sets the paused state of the player to ``True`` if it is currently ``False``,
+        else ``False`` if it is currently ``True``.
+        """
+        await self.set_pause(not self._paused)
+
+    async def pause(self) -> None:
+        """|coro|
+
+        Sets the player's paused state to ``True``.
+        """
+        await self.set_pause(True)
+
+    async def resume(self) -> None:
+        """|coro|
+
+        Sets the player's paused state to ``False``.
+        """
+        await self.set_pause(False)
+
+    async def set_volume(self, volume: int) -> None:
+        """|coro|
+
+        Sets the volume of the player.
+
+        Parameters
+        ----------
+        volume: :class:`int`
+            The new volume of the player, in percent. Must be a whole number between ``0`` and ``1000``.
+
+        Raises
+        ------
+        ValueError
+            The given volume was not between ``0`` and ``1000``.
+        """
+        if not 0 <= volume <= 1000:
+            raise ValueError('Volume must be between 0 and 1000.')
+
+        await self.node.connection.send_volume(guild_id=self.guild_id, volume=volume)
+        self._volume = volume
+
+        log.info(f'[Node {self.node.identifier!r}] Volume of player with guild ID {self.guild_id} set to {volume}')
 
     def __repr__(self) -> str:
         return f'<Player node={self.node.identifier!r} guild_id={self.guild_id} channel_id={self.channel_id}>'
