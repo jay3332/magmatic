@@ -289,7 +289,7 @@ class NodePool(Generic[ClientT]):
         except IndexError:
             raise NoMatches(self, identifier, region)
 
-    def get_player(self, guild: Snowflake, *, node: Optional[Node[ClientT]] = None) -> Optional[Player[ClientT]]:
+    def get_player(self, guild: Snowflake, *, node: Optional[Node[ClientT]] = None) -> Player[ClientT]:
         """Gets the player for the given guild.
 
         If no player is found, one will be created automatically on the given node.
@@ -412,5 +412,5 @@ def get_node(identifier: Optional[str] = None, *, region: Optional[str] = None) 
 
 
 @copy_doc(NodePool.get_player)
-def get_player(guild: Snowflake, *, node: Optional[Node[ClientT]] = None) -> Optional[Player[ClientT]]:
+def get_player(guild: Snowflake, *, node: Optional[Node[ClientT]] = None) -> Player[ClientT]:
     return DefaultNodePool.get_player(guild, node=node)
