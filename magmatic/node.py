@@ -31,10 +31,10 @@ log: logging.Logger = logging.getLogger(__name__)
 
 
 class JSONSerializer(Protocol[JsonT]):
-    def loads(self, data: str) -> JsonT:
+    def loads(self, data: str, /) -> JsonT:
         ...
 
-    def dumps(self, data: JsonT) -> str:
+    def dumps(self, data: JsonT, /) -> str:
         ...
 
 
@@ -67,7 +67,7 @@ class ConnectionManager:
         self.session: ClientSession = session or ClientSession()
         self.heartbeat_interval: float = heartbeat_interval
 
-        self._password: str = password
+        self._password: Optional[str] = password
         self._ws_protocol: str = 'http' if prefer_http else 'ws'
         self._http_protocol: str = 'https' if secure else 'http'
 
@@ -216,6 +216,9 @@ class ConnectionManager:
             player._update_state(state)
 
     async def listen(self) -> None:
+        if self._ws is None:
+            return
+
         backoff = ExponentialBackoff(base=3)
 
         async for message in self._ws:
@@ -362,12 +365,12 @@ class ConnectionManager:
             An HTTP error occurred while sending the request.
         """
         backoff = ExponentialBackoff()
-        kwargs = dict(
-            method=method,
-            url=f'{self.http_url}/{endpoint}',
-            headers={'Authorization': self._password},
-            params=params,
-        )
+        kwargs = {
+            'method': method,
+            'url': f'{self.http_url}/{endpoint}',
+            'headers': {'Authorization': self._password},
+            'params': params,
+        }
 
         for i in range(self.REQUEST_MAX_TRIES):
             async with self.session.request(**kwargs) as response:

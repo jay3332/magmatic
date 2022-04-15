@@ -55,7 +55,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
         channel: VocalGuildChannel = MISSING,
         /,
         *,
-        node: Node = MISSING,
+        node: Node[ClientT] = MISSING,
         guild: Snowflake = MISSING,
     ) -> None:
         if client is not MISSING and channel is not MISSING:
@@ -137,8 +137,8 @@ class Player(VoiceProtocol, Generic[ClientT]):
         """:class:`bool`: Returns whether the player is connected to a voice channel."""
         return (
             self.channel is not None
-            and isinstance(self.guild, discord.Guild)
-            and self.guild.me.voice.channel is not None
+            and self.voice is not None
+            and self.voice.channel is not None
         )
 
     def is_self_deafened(self) -> bool:
@@ -184,7 +184,9 @@ class Player(VoiceProtocol, Generic[ClientT]):
         channel_id = int(data['channel_id'])
         if channel_id != self.channel_id:
             # Moved channels
-            self.channel = self.client.get_channel(channel_id)
+            channel = self.client.get_channel(channel_id)
+            assert isinstance(channel, VocalGuildChannel)
+            self.channel = channel
 
         await self._update_voice_data(event=data)
 

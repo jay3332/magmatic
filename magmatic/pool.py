@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Awaitable, Dict, Final, Generic, Iterator, List, Optional, TYPE_CHECKING, TypeVar, Union
+from typing import Any, Coroutine, Dict, Final, Generic, Iterator, List, Optional, TYPE_CHECKING, TypeVar, Union
 
 from discord import Client
 from discord.utils import copy_doc
@@ -53,7 +53,7 @@ class NodePool(Generic[ClientT]):
         """
         yield from self._nodes.values()
 
-    def add_node(self, node: Node[ClientT], *, identifier: str = None) -> None:
+    def add_node(self, node: Node[ClientT], *, identifier: Optional[str] = None) -> None:
         """Adds an existing node to the pool.
 
         Parameters
@@ -143,7 +143,7 @@ class NodePool(Generic[ClientT]):
         if identifier is None and not self._nodes:
             identifier = 'MAIN'
 
-        if identifier in self._nodes:
+        if identifier is not None and identifier in self._nodes:
             raise NodeConflict(self, identifier)
 
         node = Node(
@@ -159,7 +159,7 @@ class NodePool(Generic[ClientT]):
             secure=secure,
             serializer=serializer,
         )
-        self._nodes[identifier] = node
+        self._nodes[node.identifier] = node
         return node
 
     async def start_node(
@@ -338,7 +338,7 @@ class NodePool(Generic[ClientT]):
         return len(self._nodes)
 
 
-DefaultNodePool: Final[NodePool[Client]] = NodePool()
+DefaultNodePool: Final[NodePool] = NodePool()
 
 
 @copy_doc(NodePool.create_node)
@@ -385,7 +385,7 @@ def start_node(
     prefer_http: bool = False,
     secure: bool = False,
     serializer: JSONSerializer[Dict[str, Any]] = json,
-) -> Awaitable[Node[ClientT]]:
+) -> Coroutine[Any, Any, Node[ClientT]]:
     return DefaultNodePool.start_node(
         bot=bot,
         host=host,
@@ -402,7 +402,7 @@ def start_node(
 
 
 @copy_doc(NodePool.add_node)
-def add_node(node: Node[Any], *, identifier: str = None) -> None:
+def add_node(node: Node[Any], *, identifier: Optional[str] = None) -> None:
     DefaultNodePool.add_node(node, identifier=identifier)
 
 
