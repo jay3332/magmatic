@@ -141,6 +141,10 @@ class Player(VoiceProtocol, Generic[ClientT]):
             and self.voice.channel is not None
         )
 
+    def is_self_muted(self) -> bool:
+        """:class:`bool`: Returns whether the player's voice state is self-muted."""
+        return self.voice is not None and self.voice.self_mute
+
     def is_self_deafened(self) -> bool:
         """:class:`bool`: Returns whether the player's voice state is self-deafened."""
         return self.voice is not None and self.voice.self_deaf
@@ -196,6 +200,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
         *,
         timeout: float = 60.0,
         reconnect: bool = False,
+        self_mute: bool = False,
         self_deaf: bool = False,
     ) -> None:
         """|coro|
@@ -213,6 +218,8 @@ class Player(VoiceProtocol, Generic[ClientT]):
             or the gateway goes down.
 
             Defaults to ``False``.
+        self_mute: :class:`bool`
+            Whether to self-mute upon joining the channel. Defaults to ``False``.
         self_deaf: :class:`bool`
             Whether to self-deafen upon connecting. Defaults to ``False``.
 
@@ -225,7 +232,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
             If this happens, try passing in the actual guild object instead, or enabling guild intents.
         """
         if channel is not None:
-            if self.channel == channel and self.is_connected() and self.is_self_deafened() is self_deaf:
+            if self.channel == channel and self.is_connected():
                 return
 
             self.channel = channel
@@ -234,7 +241,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
         assert isinstance(self.guild, discord.Guild)
 
         log.debug(f'[Node {self.node.identifier!r}] Connecting to voice channel with ID {self.channel_id!r}')
-        await self.guild.change_voice_state(channel=self.channel, self_deaf=self_deaf)
+        await self.guild.change_voice_state(channel=self.channel, self_deaf=self_deaf, self_mute=self_mute)
 
     async def disconnect(self, *, force: bool = False, destroy: bool = True) -> None:
         """|coro|
@@ -294,7 +301,8 @@ class Player(VoiceProtocol, Generic[ClientT]):
             self.node._players.pop(self.guild_id, None)
             self.cleanup()
 
-    # This is really similar to Player.connect, we could possibly merge the two in the future.
+    # This following three methods are really similar to Player.connect and themselves;
+    # we could possibly merge them in the future.
     async def move_to(self, channel: VocalGuildChannel) -> None:
         """|coro|
 
@@ -325,7 +333,57 @@ class Player(VoiceProtocol, Generic[ClientT]):
         log.debug(f'[Node {self.node.identifier!r}] Moving player to voice channel with ID {channel.id!r}')
 
         self.channel = channel
-        await self.guild.change_voice_state(channel=self.channel)
+        await self.guild.change_voice_state(
+            channel=self.channel,
+            self_deaf=self.is_self_deafened(),
+            self_mute=self.is_self_muted(),
+        )
+
+    async def set_deafen(self, deafen: bool) -> None:
+        """|coro|
+
+        Sets the self-deafened state of the player's voice state.
+
+        Parameters
+        ----------
+        deafen: :class:`bool`
+            Whether the player's voice state should be deafened.
+        """
+        if not self.is_connected():
+            return
+
+        self._upgrade_guild()
+        assert isinstance(self.guild, discord.Guild)
+
+        log.debug(f'[Node {self.node.identifier!r}] Setting deafen state to {deafen!r}')
+        await self.guild.change_voice_state(
+            channel=self.channel,
+            self_deaf=deafen,
+            self_mute=self.is_self_muted(),
+        )
+
+    async def set_mute(self, mute: bool) -> None:
+        """|coro|
+
+        Sets the self-muted state of the player's voice state.
+
+        Parameters
+        ----------
+        mute: :class:`bool`
+            Whether the player's voice state should be muted.
+        """
+        if not self.is_connected():
+            return
+
+        self._upgrade_guild()
+        assert isinstance(self.guild, discord.Guild)
+
+        log.debug(f'[Node {self.node.identifier!r}] Setting mute state to {mute!r}')
+        await self.guild.change_voice_state(
+            channel=self.channel,
+            self_deaf=self.is_self_deafened(),
+            self_mute=mute,
+        )
 
     async def set_pause(self, pause: bool) -> None:
         """|coro|
