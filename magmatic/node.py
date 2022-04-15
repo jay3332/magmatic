@@ -31,6 +31,8 @@ log: logging.Logger = logging.getLogger(__name__)
 
 
 class JSONSerializer(Protocol[JsonT]):
+    __slots__ = ()
+
     def loads(self, data: str, /) -> JsonT:
         ...
 
@@ -43,6 +45,22 @@ class ConnectionManager:
 
     This is used internally.
     """
+
+    __slots__ = (
+        'node',
+        'host',
+        'port',
+        'loop',
+        'session',
+        'heartbeat_interval',
+        '_password',
+        '_ws_protocol',
+        '_http_protocol',
+        '_ws',
+        '_ws_resume_key',
+        '_listener',
+        '_serializer',
+    )
 
     REQUEST_MAX_TRIES: ClassVar[int] = 1
 

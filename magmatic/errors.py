@@ -16,6 +16,10 @@ __all__ = (
     'ConnectionFailure',
     'HandshakeFailure',
     'AuthorizationFailure',
+    'NoMatches',
+    'NoAvailableNodes',
+    'NodeConflict',
+    'PlayerNotFound',
 )
 
 
@@ -31,6 +35,8 @@ class HTTPException(MagmaticException):
     response: :class:`aiohttp.ClientResponse`
         The aiohttp response object received from Lavalink.
     """
+
+    __slots__ = ('response',)
 
     def __init__(self, response: ClientResponse) -> None:
         self.response: ClientResponse = response
@@ -52,6 +58,8 @@ class ConnectionFailure(MagmaticException):
         The exception that was raised.
     """
 
+    __slots__ = ('node', 'error')
+
     def __init__(self, node: Node, error: Exception) -> None:
         self.node: Node = node
         self.error: Exception = error
@@ -72,6 +80,8 @@ class AuthorizationFailure(MagmaticException):
         The node that failed to authorize.
     """
 
+    __slots__ = ('node',)
+
     def __init__(self, node: Node) -> None:
         self.node: Node = node
 
@@ -89,6 +99,8 @@ class NodeConflict(MagmaticException):
         The identifier of the conflicting node.
     """
 
+    __slots__ = ('pool', 'identifier')
+
     def __init__(self, pool: NodePool, identifier: str) -> None:
         self.pool: NodePool = pool
         self.identifier: str = identifier
@@ -104,6 +116,8 @@ class NoAvailableNodes(MagmaticException):
     pool: :class:`.NodePool`
         The node pool that contains no nodes.
     """
+
+    __slots__ = ('pool',)
 
     def __init__(self, pool: NodePool) -> None:
         self.pool: NodePool = pool
@@ -123,6 +137,8 @@ class NoMatches(MagmaticException):
     region: Optional[:class:`str`]
         The region attempted to be matched. Could be ``None`` if no region was provided.
     """
+
+    __slots__ = ('pool', 'identifier', 'region')
 
     def __init__(self, pool: NodePool, identifier: Optional[str], region: Optional[str]) -> None:
         self.pool: NodePool = pool
@@ -149,6 +165,8 @@ class PlayerNotFound(MagmaticException):
     guild: :class:`discord.abc.Snowflake`
         The guild/snowflake object passed into :meth:`.Node.get_player`.
     """
+
+    __slots__ = ('node', 'guild')
 
     def __init__(self, node: Node, guild: Snowflake) -> None:
         self.node: Node = node

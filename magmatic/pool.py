@@ -25,6 +25,7 @@ __all__ = (
     'create_node',
     'start_node',
     'get_node',
+    'get_player',
 )
 
 
@@ -34,6 +35,8 @@ class NodePool(Generic[ClientT]):
     By default, a default node pool (:ref:`DefaultNodePool`) is created, however
     you can construct these yourself.
     """
+
+    __slots__ = ('_nodes',)
 
     def __init__(self) -> None:
         self._nodes: Dict[str, Node] = {}
