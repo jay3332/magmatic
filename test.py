@@ -14,7 +14,9 @@ class TestBot(commands.Bot):
         print(f'Logged in as {self.user}')
 
 
-bot = TestBot(command_prefix='magmatic:', intents=discord.Intents.default())
+intents = discord.Intents.default()
+intents.message_content = True
+bot = TestBot(command_prefix='magmatic:', intents=intents)
 
 
 @bot.command()
