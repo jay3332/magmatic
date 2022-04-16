@@ -56,6 +56,7 @@ rst_prolog = """
 intersphinx_mapping = {
     "py": ("https://docs.python.org/3", None),
     "aio": ('https://docs.aiohttp.org/en/stable/', None),
+    "discord": ('https://discordpy.readthedocs.io/en/master/', None),
 }
 
 # List of patterns, relative to source directory, that match files and
