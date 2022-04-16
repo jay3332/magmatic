@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Generic, Optional, TYPE_CHECKING, Type, Union
+from typing import Any, Dict, Generic, Optional, TYPE_CHECKING, Type, TypeVar, Union
 
 import discord
 from discord import VoiceProtocol
@@ -14,7 +14,9 @@ if TYPE_CHECKING:
     from discord.channel import VocalGuildChannel
     from discord.types.voice import GuildVoiceState, VoiceServerUpdate
 
-    from .node import ClientT, Node
+    from .node import Node
+
+ClientT = TypeVar('ClientT', bound=discord.Client)
 
 __all__ = (
     'Player',
