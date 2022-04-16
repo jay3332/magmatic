@@ -8,12 +8,12 @@ from discord import Client
 from discord.utils import copy_doc
 
 from .errors import NoAvailableNodes, NoMatches, NodeConflict, PlayerNotFound
+from .node import JSONSerializer, Node
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
     from discord.abc import Snowflake
 
-    from .node import JSONSerializer, Node
     from .player import Player
 
 ClientT = TypeVar('ClientT', bound=Client)
