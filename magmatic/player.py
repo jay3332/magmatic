@@ -93,6 +93,10 @@ class Player(VoiceProtocol, Generic[ClientT]):
         if isinstance(self.guild, discord.Guild):
             return
 
+        if self.channel is not MISSING:
+            self.guild = self.channel.guild
+            return
+
         if guild := self.client.get_guild(self.guild.id):
             self.guild = guild
             return
