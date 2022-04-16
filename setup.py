@@ -37,7 +37,7 @@ setup(
         'docs': [
             'sphinx>=4.5',
             'furo',
-            'git@https://github.com/rapptz/discord.py',
+            'discord.py @ git+https://github.com/rapptz/discord.py',
         ],
     },
     python_requires='>=3.8',
