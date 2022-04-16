@@ -4,7 +4,20 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any, ClassVar, Dict, Generic, List, Literal, Optional, Protocol, TYPE_CHECKING, TypeVar, Union
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Optional,
+    Protocol,
+    TYPE_CHECKING,
+    TypeVar,
+    Union,
+)
 
 import discord
 from aiohttp import ClientSession, ClientWebSocketResponse, WSMsgType, WSServerHandshakeError
@@ -17,6 +30,7 @@ from .stats import Stats
 
 if TYPE_CHECKING:
     from discord.abc import Snowflake
+    from discord.guild import VocalGuildChannel
 
     RequestMethod = Literal['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 
@@ -427,6 +441,9 @@ class Node(Generic[ClientT]):
         The voice region of this node.
     """
 
+    if TYPE_CHECKING:
+        _cleanup: Callable[[], None]
+
     def __init__(
         self,
         *,
@@ -556,20 +573,64 @@ class Node(Generic[ClientT]):
         """
         await self.connection.connect()
 
-    async def disconnect(self) -> None:
+    async def connect(self, channel: VocalGuildChannel, *, self_mute: bool = False, self_deaf: bool = False) -> Player:
+        """|coro|
+
+        Creates a player for the given voice channel on this node and establishes a
+        voice connection with it.
+
+        .. note::
+            To disconnect the player, call :meth:`.Player.disconnect` on the **player** object,
+            which will be returned by this function.
+
+            :meth:`.Node.disconnect` is different - it will disconnect the node.
+
+        .. note::
+            This does not start/connect the node to Lavalink. See :meth:`.Node.start` for that.
+
+        Parameters
+        ----------
+        channel: Union[:class:`discord.VoiceChannel`, :class:`discord.StageChannel`]
+            The voice channel to connect to.
+        self_mute: :class:`bool`
+            Whether to self-mute upon connecting. Defaults to ``False``.
+        self_deaf: :class:`bool`
+            Whether to self-deafen upon connecting. Defaults to ``False``.
+
+        Returns
+        -------
+        :class:`.Player`
+            The player associated with the given voice channel.
+        """
+        player = self.get_player(channel.guild)
+        await player.connect(channel, self_mute=self_mute, self_deaf=self_deaf)
+
+        return player
+
+    async def disconnect(self, *, disconnect_players: bool = True) -> None:
         """|coro|
 
         Disconnects this node from Lavalink and clears any data associated with it.
+
+        Parameters
+        ----------
+        disconnect_players: :class:`bool`
+            Whether to disconnect all players on this node from their voice channels.
+            Defaults to ``True``.
         """
         log.info(f'[Node {self.identifier!r}]: Disconnecting...')
+
+        for player in self._players.values():
+            await player.destroy(disconnect=disconnect_players)
+
         await self.connection.disconnect()
 
-    async def stop(self) -> None:
+    async def stop(self, *, disconnect_players: bool = True) -> None:
         """|coro|
 
         An alias to :meth:`.Node.disconnect`, see documentation for that instead.
         """
-        await self.disconnect()
+        await self.disconnect(disconnect_players=disconnect_players)
 
     async def destroy(self) -> None:
         """|coro|
@@ -579,6 +640,7 @@ class Node(Generic[ClientT]):
         log.info(f'[Node {self.identifier!r}]: Destroying node...')
 
         await self.disconnect()
+        self._cleanup()
 
     async def request(self, method: RequestMethod, endpoint: str, **params: Any) -> Dict[str, Any]:
         """|coro|
