@@ -8,7 +8,9 @@ __all__ = (
 
 
 class OpCode(Enum):
-    """Represents an inbound Op-code received from Lavalink's websocket.
+    """|enum|
+
+    Represents an inbound Op-code received from Lavalink's websocket.
 
     This is only used internally and should rarely be used.
     """
@@ -24,7 +26,9 @@ class OpCode(Enum):
 
 
 class EventType(Enum):
-    """Represents the type of event received from Lavalink's websocket via the ``event`` op-code.
+    """|enum|
+
+    Represents the type of event received from Lavalink's websocket via the ``event`` op-code.
 
     This is only used internally and should rarely be used.
     """

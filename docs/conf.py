@@ -12,18 +12,22 @@
 #
 import os
 import sys
+
+from magmatic import __author__, __version__
+
 sys.path.insert(0, os.path.abspath('.'))
 sys.path.insert(0, os.path.abspath('..'))
+
 
 
 # -- Project information -----------------------------------------------------
 
 project = 'magmatic'
-copyright = '2022 - present, jay3332 & Cryptex'
-author = 'jay3332, Cryptex'
+copyright = '2022 - present, ' + __author__
+author = __author__
 
 # The full version, including alpha/beta/rc tags
-release = '0.0.0'
+release = __version__
 
 
 # -- General configuration ---------------------------------------------------
@@ -54,9 +58,10 @@ rst_prolog = """
 """
 
 intersphinx_mapping = {
-    "py": ("https://docs.python.org/3", None),
-    "aio": ('https://docs.aiohttp.org/en/stable/', None),
-    "discord": ('https://discordpy.readthedocs.io/en/master/', None),
+    'py': ('https://docs.python.org/3', None),
+    'aio': ('https://docs.aiohttp.org/en/stable/', None),
+    'discord': ('https://discordpy.readthedocs.io/en/master/', None),
+    'dpy': ('https://discordpy.readthedocs.io/en/master/', None),
 }
 
 # List of patterns, relative to source directory, that match files and
