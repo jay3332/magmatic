@@ -33,6 +33,12 @@ setup(
     long_description=readme,
     include_package_data=True,
     install_requires=requirements,
+    extras_require={
+        'docs': [
+            'sphinx>=4.5',
+            'furo',
+        ],
+    },
     python_requires='>=3.8',
     classifiers=[
         'Development Status :: 4 - Beta',
