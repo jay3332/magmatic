@@ -78,15 +78,6 @@ TimescaleFilter
     :members:
     :inherited-members:
 
-Timescale Pitch Models
-++++++++++++++++++++++
-
-.. autoclass:: filters.PitchMultiplier
-
-.. autoclass:: filters.PitchOctaves
-
-.. autoclass:: filters.PitchSemitones
-
 Stats
 -----
 
@@ -100,4 +91,13 @@ MemoryStats
 ~~~~~~~~~~~
 
 .. autoclass:: MemoryStats
+    :members:
+
+Enums
+-----
+
+.. autoclass:: OpCode
+    :members:
+
+.. autoclass:: EventType
     :members:
