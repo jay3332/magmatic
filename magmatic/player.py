@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Generic, Optional, TYPE_CHECKING, Union
+from typing import Any, Dict, Generic, Optional, TYPE_CHECKING, Type, Union
 
 import discord
 from discord import VoiceProtocol
 from discord.utils import MISSING
+
+from .filters import BaseFilter, FilterSink
 
 if TYPE_CHECKING:
     from discord.abc import Snowflake
@@ -77,6 +79,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
 
         self._paused: bool = False
         self._volume: int = 100
+        self._filters: FilterSink = MISSING  # lazily initialized
 
         self._previous_update_time: float = 0
         self._previous_position: float = 0
@@ -132,6 +135,17 @@ class Player(VoiceProtocol, Generic[ClientT]):
     def volume(self) -> int:
         """:class:`int`: The current volume of the player."""
         return self._volume
+
+    @property
+    def filters(self) -> FilterSink:
+        """:class:`.FilterSink`: The filters currently applied to the player.
+
+        View documentation on :class:`.FilterSink` for more information on using filters.
+        """
+        if self._filters is MISSING:
+            self._filters = FilterSink()
+
+        return self._filters
 
     def is_connected(self) -> bool:
         """:class:`bool`: Returns whether the player is connected to a voice channel."""
@@ -395,10 +409,10 @@ class Player(VoiceProtocol, Generic[ClientT]):
         pause: :class:`bool`
             The new paused state of the player. Set to ``True`` to pause; ``False`` to resume.
         """
-        await self.node.connection.send_pause(guild_id=self.guild_id, pause=bool(pause))
+        await self.node.connection.send_pause(guild_id=self.guild_id, pause=pause)
         self._paused = pause
 
-        log.info(f'[Node {self.node.identifier!r}] Paused state of player with guild ID {self.guild_id} set to {pause}')
+        log.debug(f'[Node {self.node.identifier!r}] Paused state of player with guild ID {self.guild_id} set to {pause}')
 
     async def toggle_pause(self) -> None:
         """|coro|
@@ -443,7 +457,103 @@ class Player(VoiceProtocol, Generic[ClientT]):
         await self.node.connection.send_volume(guild_id=self.guild_id, volume=volume)
         self._volume = volume
 
-        log.info(f'[Node {self.node.identifier!r}] Volume of player with guild ID {self.guild_id} set to {volume}')
+        log.debug(f'[Node {self.node.identifier!r}] Volume of player with guild ID {self.guild_id} set to {volume}')
+
+    async def apply_filters(self) -> None:
+        """|coro|
+
+        Applies the filters from :attr:`.Player.filters` to the player.
+        """
+        if not self._filters:
+            return
+
+        await self.node.connection.send_filters(guild_id=self.guild_id, filters=self._filters.to_dict())
+        log.debug(f'[Node {self.node.identifier!r}] Applied filters of player with guild ID {self.guild_id}')
+
+    async def add_filters(self, *filters: BaseFilter) -> None:
+        """|coro|
+
+        Adds the given filters to the player's :class:`.FilterSink` and applies them immediately.
+
+        This is the equivalent of calling :meth:`Player.filters.add() <.FilterSink.add>`
+        and then :meth:`.Player.apply_filters` immediately.
+
+        .. note::
+            If you're applying multiple operations simultaneously to the filter sink,
+            consider modifying the sink directly and then running :meth:`.Player.apply_filters`
+            to apply them all at once.
+
+        Parameters
+        ----------
+        *filters: :class:`.BaseFilter`
+            The filters to add. Must inherit from :class:`.BaseFilter`.
+        """
+        self._filters.add(*filters)
+        await self.apply_filters()
+
+    async def remove_filters(self, *filters: Type[BaseFilter]) -> None:
+        """|coro|
+
+        Removes the given filters from the player's :class:`.FilterSink` and applies changes immediately.
+
+        All values passed must be class objects (that is - the classes themselves) that subclass :class:`.BaseFilter`.
+        For example, if you wanted to remove the equalizer filter, you would pass in ``Equalizer`` itself - not the instance.
+
+        All given filters that are not in the player's filter sink will pass silently.
+
+        This is the equivalent of calling :meth:`Player.filters.remove() <.FilterSink.remove>`
+        and then :meth:`.Player.apply_filters` immediately.
+
+        .. note::
+            If you're applying multiple operations simultaneously to the filter sink,
+            consider modifying the sink directly and then running :meth:`.Player.apply_filters`
+            to apply them all at once.
+
+        Parameters
+        ----------
+        *filters: Type[:class:`.BaseFilter`]
+            The classes filters to remove. Each must subclass :class:`.BaseFilter`.
+        """
+        self._filters.remove(*filters)
+        await self.apply_filters()
+
+    async def overwrite_filters(self, *filters: BaseFilter) -> None:
+        """|coro|
+
+        Clears all filters in the player's :class:`.FilterSink`, overwrites them with the given filters,
+        and applies them immediately.
+
+        This is the equivalent of calling :meth:`Player.filters.overwrite() <.FilterSink.overwrite>`
+        and then :meth:`.Player.apply_filters` immediately.
+
+        .. note::
+            If you're applying multiple operations simultaneously to the filter sink,
+            consider modifying the sink directly and then running :meth:`.Player.apply_filters`
+            to apply them all at once.
+
+        Parameters
+        ----------
+        *filters: :class:`.BaseFilter`
+            The filters to overwrite. Must inherit from :class:`.BaseFilter`.
+        """
+        self._filters.overwrite(*filters)
+        await self.apply_filters()
+
+    async def clear_filters(self) -> None:
+        """|coro|
+
+        Clears all filters from the player's :class:`.FilterSink` and applies changes immediately.
+
+        This is the equivalent of calling :meth:`Player.filters.clear() <.FilterSink.clear>`
+        and then :meth:`.Player.apply_filters` immediately.
+
+        .. note::
+            If you're applying multiple operations simultaneously to the filter sink,
+            consider modifying the sink directly and then running :meth:`.Player.apply_filters`
+            to apply them all at once.
+        """
+        self._filters.clear()
+        await self.apply_filters()
 
     def __repr__(self) -> str:
         return f'<Player node={self.node.identifier!r} guild_id={self.guild_id} channel_id={self.channel_id}>'

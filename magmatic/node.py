@@ -31,8 +31,6 @@ log: logging.Logger = logging.getLogger(__name__)
 
 
 class JSONSerializer(Protocol[JsonT]):
-    __slots__ = ()
-
     def loads(self, data: str, /) -> JsonT:
         ...
 
@@ -124,7 +122,7 @@ class ConnectionManager:
 
         result = {
             'User-Id': str(self.node.bot.user.id),
-            'Client-Name': 'magmatic/' + __version__,
+            'Client-Name': f'magmatic/{__version__}',
             'Resume-Key': self._ws_resume_key,
         }
 
@@ -274,7 +272,7 @@ class ConnectionManager:
             The JSON payload represented as a :py:class:`dict`.
         """
         if self._ws is None:
-            raise RuntimeError('no running websocket to send message to')
+            raise RuntimeError('no running websocket to send message to. did you start the node?')
 
         raw = self._serializer.dumps(data)
         if isinstance(raw, bytes):
@@ -349,6 +347,13 @@ class ConnectionManager:
         await self.send({
             'op': 'destroy',
             'guildId': guild_id,
+        })
+
+    async def send_filters(self, *, guild_id: int, filters: Dict[str, Any]) -> None:
+        await self.send({
+            'op': 'filters',
+            'guildId': guild_id,
+            **filters,
         })
 
     async def send_resume(self) -> None:
@@ -461,10 +466,7 @@ class Node(Generic[ClientT]):
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
         """:class:`asyncio.AbstractEventLoop`: The event loop associated with this node."""
-        if self._loop is None:
-            return self.bot.loop
-
-        return self._loop
+        return self.bot.loop if self._loop is None else self._loop
 
     @property
     def connection(self) -> ConnectionManager:
@@ -562,6 +564,13 @@ class Node(Generic[ClientT]):
         """
         log.info(f'[Node {self.identifier!r}]: Disconnecting...')
         await self.connection.disconnect()
+
+    async def stop(self) -> None:
+        """|coro|
+
+        An alias to :meth:`.Node.disconnect`, see documentation for that instead.
+        """
+        await self.disconnect()
 
     async def destroy(self) -> None:
         """|coro|
