@@ -670,3 +670,6 @@ class Node(Generic[ClientT]):
 
     def __repr__(self) -> str:
         return f'<Node {self.identifier!r}>'
+
+    def __del__(self) -> None:
+        self._cleanup()
