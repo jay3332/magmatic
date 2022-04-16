@@ -153,8 +153,9 @@ class Player(VoiceProtocol, Generic[ClientT]):
         """:class:`bool`: Returns whether the player is connected to a voice channel."""
         return (
             self.channel is not None
-            and self.voice is not None
-            and self.voice.channel is not None
+            and isinstance(self.guild, discord.Guild)
+            and self.guild.me.voice is not None
+            and self.guild.me.voice.channel is not None
         )
 
     def is_self_muted(self) -> bool:

@@ -74,6 +74,7 @@ class NodePool(Generic[ClientT]):
             raise NodeConflict(self, identifier)
 
         self._nodes[identifier or node.identifier] = node
+        self._inject_cleanup(node)
 
     def create_node(
         self,
@@ -162,6 +163,7 @@ class NodePool(Generic[ClientT]):
             secure=secure,
             serializer=serializer,
         )
+        self._inject_cleanup(node)
         self._nodes[node.identifier] = node
         return node
 
@@ -336,6 +338,12 @@ class NodePool(Generic[ClientT]):
             await node.destroy()
 
         self._nodes.clear()
+
+    def _inject_cleanup(self, node: Node[ClientT]) -> None:
+        def wrapper() -> None:
+            self._nodes.pop(node.identifier, None)
+
+        node._cleanup = wrapper
 
     def __len__(self) -> int:
         return len(self._nodes)
