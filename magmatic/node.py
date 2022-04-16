@@ -209,10 +209,9 @@ class ConnectionManager:
             return
 
         if op is OpCode.stats:
-            stats = data['stats']
-            self.node._stats = Stats(stats)
+            self.node._stats = Stats(data)
 
-            log.debug(f'[Node {self.node.identifier!r}]: Updated stats: {stats!r}')
+            log.debug(f'[Node {self.node.identifier!r}]: Updated stats: {data!r}')
             return
 
         if 'guildId' not in data:
