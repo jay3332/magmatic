@@ -572,23 +572,13 @@ class Node(Generic[ClientT]):
 
         return self._players[guild.id]
 
-    async def start(self) -> None:
-        """|coro|
-
-        Starts this node and connects it to Lavalink.
-
-        Raises
-        ------
-        AuthorizationFailure
-            Failed to authorize with Lavalink. Your password is likely incorrect.
-        HandshakeFailure
-            Failed the initial handshake with Lavalink's websocket.
-        ConnectionFailure
-            Failed to connect to Lavalink.
-        """
-        await self.connection.connect()
-
-    async def connect(self, channel: VocalGuildChannel, *, self_mute: bool = False, self_deaf: bool = False) -> Player:
+    async def connect_player(
+        self,
+        channel: VocalGuildChannel,
+        *,
+        self_mute: bool = False,
+        self_deaf: bool = False,
+    ) -> Player:
         """|coro|
 
         Creates a player for the given voice channel on this node and establishes a
@@ -599,9 +589,6 @@ class Node(Generic[ClientT]):
             which will be returned by this function.
 
             :meth:`.Node.disconnect` is different - it will disconnect the node.
-
-        .. note::
-            This does not start/connect the node to Lavalink. See :meth:`.Node.start` for that.
 
         Parameters
         ----------
@@ -621,6 +608,42 @@ class Node(Generic[ClientT]):
         await player.connect(channel, self_mute=self_mute, self_deaf=self_deaf)
 
         return player
+
+    async def connect(self) -> None:
+        """|coro|
+
+        Connects this node with Lavalink by establishing a WebSocket connection.
+
+        Raises
+        ------
+        AuthorizationFailure
+            Failed to authorize with Lavalink. Your password is likely incorrect.
+        HandshakeFailure
+            Failed the initial handshake with Lavalink's websocket.
+        ConnectionFailure
+            Failed to connect to Lavalink.
+
+        See also
+        --------
+        :meth:`.Node.start`
+        """
+        await self.connection.connect()
+
+    async def start(self) -> None:
+        """|coro|
+
+        Starts this node and connects it to Lavalink.
+
+        Raises
+        ------
+        AuthorizationFailure
+            Failed to authorize with Lavalink. Your password is likely incorrect.
+        HandshakeFailure
+            Failed the initial handshake with Lavalink's websocket.
+        ConnectionFailure
+            Failed to connect to Lavalink.
+        """
+        await self.connect()
 
     async def disconnect(self, *, disconnect_players: bool = True) -> None:
         """|coro|
