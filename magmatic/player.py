@@ -215,6 +215,18 @@ class Player(VoiceProtocol, Generic[ClientT]):
 
         await self._update_voice_data(event=data)
 
+    def _inject_voice_client(self) -> None:
+        if self.channel is MISSING:
+            raise RuntimeError('no channel to join')
+
+        key_id, _ = self.channel._get_voice_client_key()
+        state = self.channel._state
+
+        if state._get_voice_client(key_id):
+            return
+
+        state._add_voice_client(key_id, self)
+
     async def connect(
         self,
         channel: Optional[VocalGuildChannel] = None,
@@ -261,6 +273,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
         self._upgrade_guild()
         assert isinstance(self.guild, discord.Guild)
 
+        self._inject_voice_client()
         log.debug(f'[Node {self.node.identifier!r}] Connecting to voice channel with ID {self.channel_id!r}')
         await self.guild.change_voice_state(channel=self.channel, self_deaf=self_deaf, self_mute=self_mute)
 
