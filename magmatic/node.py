@@ -15,8 +15,10 @@ from typing import (
     Optional,
     Protocol,
     TYPE_CHECKING,
+    Type,
     TypeVar,
     Union,
+    cast,
 )
 
 import discord
@@ -33,6 +35,7 @@ if TYPE_CHECKING:
     from discord.guild import VocalGuildChannel
 
     RequestMethod = Literal['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+    PlayerT = TypeVar('PlayerT', bound=Player[Any])
 
 ClientT = TypeVar('ClientT', bound=discord.Client)
 JsonT = TypeVar('JsonT', bound=Union[Dict[str, Any], List[Any], Any])
@@ -476,7 +479,7 @@ class Node(Generic[ClientT]):
             node=self,
         )
 
-        self._players: Dict[int, Player] = {}
+        self._players: Dict[int, Player[ClientT]] = {}
         self._stats: Optional[Stats] = None
 
     @property
@@ -490,7 +493,7 @@ class Node(Generic[ClientT]):
         return self._connection
 
     @property
-    def players(self) -> List[Player]:
+    def players(self) -> List[Player[ClientT]]:
         """list[:class:`Player`]: A list of the players handled by this node."""
         return list(self._players.values())
 
@@ -522,7 +525,7 @@ class Node(Generic[ClientT]):
         """
         return self.connection._password
 
-    def get_player(self, guild: Snowflake, *, fail_if_not_exists: bool = False) -> Player:
+    def get_player(self, guild: Snowflake, *, cls: Type[PlayerT] = Player, fail_if_not_exists: bool = False) -> PlayerT:
         """Returns the :class:`.Player` associated with the given guild.
 
         If ``fail_if_not_exists`` is ``False`` and the player does not exist, one is created.
@@ -534,6 +537,14 @@ class Node(Generic[ClientT]):
 
             Could be a :class:`snowflake <discord.abc.Snowflake>`-like object,
             such as :class:`discord.Object`, if you cannot resolve the full guild object yet.
+        cls: Type[:class:`Player`]
+            The player subclass to use if you would like custom behavior. This must be a class
+            that subclasses :class:`.Player`.
+
+            Defaults to :class:`.Player`.
+
+            .. note::
+                The class passed will only be applied if a new player is created.
         fail_if_not_exists: :class:`bool`
             Whether to raise an exception if the player does not exist.
 
@@ -553,7 +564,11 @@ class Node(Generic[ClientT]):
             if fail_if_not_exists:
                 raise PlayerNotFound(self, guild)
 
-            self._players[guild.id] = Player(node=self, guild=guild)
+            self._players[guild.id] = cls(node=self, guild=guild)
+
+        # Minor, but this saves an overhead of a function call.
+        if TYPE_CHECKING:
+            return cast(PlayerT, None)
 
         return self._players[guild.id]
 

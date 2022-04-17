@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Coroutine, Dict, Final, Generic, Iterator, List, Optional, TYPE_CHECKING, TypeVar, Union
+from typing import Any, Coroutine, Dict, Final, Generic, Iterator, List, Optional, TYPE_CHECKING, Type, TypeVar, Union
 
 from discord import Client
 from discord.utils import copy_doc
@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from discord.abc import Snowflake
 
     from .player import Player
+
+    PlayerT = TypeVar('PlayerT', bound=Player[Any])
 
 ClientT = TypeVar('ClientT', bound=Client)
 
@@ -294,7 +296,13 @@ class NodePool(Generic[ClientT]):
         except IndexError:
             raise NoMatches(self, identifier, region)
 
-    def get_player(self, guild: Snowflake, *, node: Optional[Node[ClientT]] = None) -> Player[ClientT]:
+    def get_player(
+        self,
+        guild: Snowflake,
+        *,
+        node: Optional[Node[ClientT]] = None,
+        cls: Type[PlayerT] = Player,
+    ) -> PlayerT:
         """Gets the player for the given guild.
 
         If no player is found, one will be created automatically on the given node.
@@ -310,6 +318,14 @@ class NodePool(Generic[ClientT]):
             The node to get the player from.
 
             If left as ``None``, the node will be determined automatically.
+        cls: Type[:class:`Player`]
+            The player subclass to use if you would like custom behavior. This must be a class
+            that subclasses :class:`.Player`.
+
+            Defaults to :class:`.Player`.
+
+            .. note::
+                The class passed will only be applied if a new player is created.
 
         Returns
         -------
@@ -319,13 +335,33 @@ class NodePool(Generic[ClientT]):
         if node is None:
             for node in self.walk_nodes():
                 try:
-                    return node.get_player(guild, fail_if_not_exists=True)
+                    return node.get_player(guild, cls=cls, fail_if_not_exists=True)
                 except PlayerNotFound:
                     continue
 
             node = self.get_node()
 
-        return node.get_player(guild)
+        return node.get_player(guild, cls=cls)
+
+    async def destroy_node(self, node: Union[Node[ClientT], str]) -> None:
+        """|coro|
+
+        Destroys the given node and removes it from this pool.
+
+        Parameters
+        ----------
+        node: Union[:class:`Node`, :class:`str`]
+            The node to destroy, or its string identifier.
+
+        Raises
+        ------
+        NoMatchesFound
+            No nodes in the pool match the given identifier.
+        """
+        if isinstance(node, Node):
+            node = node.identifier
+
+        await self.get_node(identifier=node).destroy()
 
     async def destroy(self) -> None:
         """|coro|
