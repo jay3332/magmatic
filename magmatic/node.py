@@ -105,6 +105,7 @@ class ConnectionManager:
         heartbeat_interval: float = 30.0,
         prefer_http: bool = False,
         serializer: JSONSerializer[Dict[str, Any]] = json,
+        resume: bool = False,
         node: Node,
     ) -> None:
         self.node: Node[Any] = node
@@ -122,7 +123,7 @@ class ConnectionManager:
             self._ws_protocol += 's'
 
         self._ws: Optional[ClientWebSocketResponse] = None
-        self._ws_resume_key: str = os.urandom(8).hex()
+        self._ws_resume_key: Optional[str] = os.urandom(8).hex() if resume else None
         self._listener: Optional[asyncio.Task] = None
         self._serializer: JSONSerializer[Dict[str, Any]] = serializer
         self._keep_alive: bool = True
@@ -155,11 +156,13 @@ class ConnectionManager:
         result = {
             'User-Id': str(self.node.bot.user.id),
             'Client-Name': f'magmatic/{__version__}',
-            'Resume-Key': self._ws_resume_key,
         }
 
         if self._password:
             result['Authorization'] = self._password
+
+        if self._ws_resume_key:
+            result['Resume-Key'] = self._ws_resume_key
 
         return result
 
@@ -401,6 +404,9 @@ class ConnectionManager:
         })
 
     async def send_resume(self) -> None:
+        if self._ws_resume_key is None:
+            raise RuntimeError('no resume key to resume with')
+
         await self.send({
             'op': 'configureResuming',
             'key': self._ws_resume_key,
@@ -490,6 +496,7 @@ class Node(Generic[ClientT]):
         loop: Optional[asyncio.AbstractEventLoop] = None,
         prefer_http: bool = False,
         secure: bool = False,
+        resume: bool = False,
         serializer: JSONSerializer[Dict[str, Any]] = json,
     ) -> None:
         self.bot: ClientT = bot
@@ -505,6 +512,7 @@ class Node(Generic[ClientT]):
             session=session,
             prefer_http=prefer_http,
             secure=secure,
+            resume=resume,
             serializer=serializer,
             node=self,
         )

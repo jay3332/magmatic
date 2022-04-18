@@ -90,6 +90,7 @@ class NodePool(Generic[ClientT]):
         loop: Optional[asyncio.AbstractEventLoop] = None,
         prefer_http: bool = False,
         secure: bool = False,
+        resume: bool = False,
         serializer: JSONSerializer[Dict[str, Any]] = json,
     ) -> Node[ClientT]:
         """Creates a new :class:`.Node` and adds it to the pool.
@@ -129,6 +130,8 @@ class NodePool(Generic[ClientT]):
             Only set this to ``True`` if the given ``host`` is remote.
 
             Defaults to ``False``.
+        resume: :class:`bool`
+            Whether to resume the node after reconnection. Defaults to ``False``.
         serializer
             An object/module with two methods: ``loads`` and ``dumps`` which serializes
             and deserializes JSON data.
@@ -162,6 +165,7 @@ class NodePool(Generic[ClientT]):
             loop=loop,
             prefer_http=prefer_http,
             secure=secure,
+            resume=resume,
             serializer=serializer,
         )
         self._inject_cleanup(node)
@@ -181,6 +185,7 @@ class NodePool(Generic[ClientT]):
         loop: Optional[asyncio.AbstractEventLoop] = None,
         prefer_http: bool = False,
         secure: bool = False,
+        resume: bool = False,
         serializer: JSONSerializer[Dict[str, Any]] = json,
     ) -> Node[ClientT]:
         """|coro|
@@ -222,6 +227,8 @@ class NodePool(Generic[ClientT]):
             Only set this to ``True`` if the given ``host`` is remote.
 
             Defaults to ``False``.
+        resume: :class:`bool`
+            Whether to resume the node after reconnection. Defaults to ``False``.
         serializer
             An object/module with two methods: ``loads`` and ``dumps`` which serializes
             and deserializes JSON data.
@@ -249,6 +256,7 @@ class NodePool(Generic[ClientT]):
             loop=loop,
             prefer_http=prefer_http,
             secure=secure,
+            resume=resume,
             serializer=serializer,
         )
         await node.start()
@@ -400,6 +408,7 @@ def create_node(
     loop: Optional[asyncio.AbstractEventLoop] = None,
     prefer_http: bool = False,
     secure: bool = False,
+    resume: bool = False,
     serializer: JSONSerializer[Dict[str, Any]] = json,
 ) -> Node[ClientT]:
     return DefaultNodePool.create_node(
@@ -413,6 +422,7 @@ def create_node(
         loop=loop,
         prefer_http=prefer_http,
         secure=secure,
+        resume=resume,
         serializer=serializer,
     )
 
@@ -430,6 +440,7 @@ def start_node(
     loop: Optional[asyncio.AbstractEventLoop] = None,
     prefer_http: bool = False,
     secure: bool = False,
+    resume: bool = False,
     serializer: JSONSerializer[Dict[str, Any]] = json,
 ) -> Coroutine[Any, Any, Node[ClientT]]:
     return DefaultNodePool.start_node(
@@ -443,6 +454,7 @@ def start_node(
         loop=loop,
         prefer_http=prefer_http,
         secure=secure,
+        resume=resume,
         serializer=serializer,
     )
 
