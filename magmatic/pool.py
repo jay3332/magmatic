@@ -42,6 +42,9 @@ class NodePool(Generic[ClientT]):
     def __init__(self) -> None:
         self._nodes: Dict[str, Node] = {}
 
+        self.__create_lock: asyncio.Lock = asyncio.Lock()
+        self.__get_lock: asyncio.Lock = asyncio.Lock()
+
     @property
     def nodes(self) -> List[Node]:
         """list[:class:`Node`]: A list of nodes in the pool."""
@@ -148,29 +151,31 @@ class NodePool(Generic[ClientT]):
         NodeConflict
             The node identifier is already in use.
         """
-        if identifier is None and not self._nodes:
-            identifier = 'MAIN'
+        async with self.__create_lock:
+            if identifier is None and not self._nodes:
+                identifier = 'MAIN'
 
-        if identifier is not None and identifier in self._nodes:
-            raise NodeConflict(self, identifier)
+            if identifier is not None and identifier in self._nodes:
+                raise NodeConflict(self, identifier)
 
-        node = Node(
-            bot=bot,
-            host=host,
-            port=port,
-            password=password,
-            region=region,
-            identifier=identifier,
-            session=session,
-            loop=loop,
-            prefer_http=prefer_http,
-            secure=secure,
-            resume=resume,
-            serializer=serializer,
-        )
-        self._inject_cleanup(node)
-        self._nodes[node.identifier] = node
-        return node
+            node = Node(
+                bot=bot,
+                host=host,
+                port=port,
+                password=password,
+                region=region,
+                identifier=identifier,
+                session=session,
+                loop=loop,
+                prefer_http=prefer_http,
+                secure=secure,
+                resume=resume,
+                serializer=serializer,
+            )
+            self._inject_cleanup(node)
+            self._nodes[node.identifier] = node
+
+            return node
 
     async def start_node(
         self,
@@ -284,24 +289,25 @@ class NodePool(Generic[ClientT]):
         NoMatchingNodes
             No nodes on this pool match the identifier and/or region.
         """
-        if not self._nodes:
-            raise NoAvailableNodes(self)
+        async with self.__get_lock:
+            if not self._nodes:
+                raise NoAvailableNodes(self)
 
-        if identifier is not None:
+            if identifier is not None:
+                try:
+                    return self._nodes[identifier]
+                except KeyError:
+                    raise NoMatchingNodes(self, identifier, region)
+
+            if region is not None:
+                nodes = (node for node in self.walk_nodes() if node.region == region)
+            else:
+                nodes = self.walk_nodes()
+
             try:
-                return self._nodes[identifier]
-            except KeyError:
+                return sorted(nodes, key=lambda node: node.player_count)[0]
+            except IndexError:
                 raise NoMatchingNodes(self, identifier, region)
-
-        if region is not None:
-            nodes = (node for node in self.walk_nodes() if node.region == region)
-        else:
-            nodes = self.walk_nodes()
-
-        try:
-            return sorted(nodes, key=lambda node: node.player_count)[0]
-        except IndexError:
-            raise NoMatchingNodes(self, identifier, region)
 
     def get_player(
         self,
