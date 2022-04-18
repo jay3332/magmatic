@@ -225,7 +225,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
 
     def is_connected(self) -> bool:
         """:class:`bool`: Returns whether the player is connected to a voice channel."""
-        if self.channel is not None:
+        if not self.channel:
             return False
 
         if self._has_voice_states_intent:
