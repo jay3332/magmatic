@@ -167,11 +167,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
         This is ``None`` if the player is not connected to a voice channel.
         This is also ``None`` if :attr:`discord.Intents.voice_states` is not enabled.
         """
-        if not self.is_connected():
-            return None
-
-        assert isinstance(self.guild, discord.Guild)
-        return self.guild.me.voice
+        return self.guild.me.voice if isinstance(self.guild, discord.Guild) else None
 
     @property
     def track(self) -> Optional[Track]:
