@@ -3,10 +3,9 @@ from __future__ import annotations
 from abc import ABC
 from typing import Any, ClassVar, Dict, TYPE_CHECKING, TypeVar, cast
 
-from .enums import ErrorSeverity, TrackEndReason
+from .enums import ErrorSeverity, EventType, TrackEndReason
 
 if TYPE_CHECKING:
-    from .enums import EventType
     from .node import Node
     from .player import Player
     from .track import Track

@@ -32,8 +32,6 @@ if TYPE_CHECKING:
     NewSetterT = TypeVar('NewSetterT')
 
     class FilterProperty(property, Generic[FilterT, SetterT]):
-        __filter_property__: Literal[True]
-
         def __get__(self, instance: FilterSink, owner: Optional[Type[FilterSink]] = None) -> Optional[FilterT]:
             return cast(FilterT, super().__get__(instance, owner))
 
@@ -476,6 +474,8 @@ def filter_property(key: str, cls: Type[FilterT]) -> Callable[
             assert isinstance(resolved, cls)
             return resolved
 
+        getter.__filter_property__ = True
+
         def setter(self: FilterSink, value: FilterT) -> None:
             if not isinstance(value, cls):
                 raise TypeError(f'expected {cls.__name__}, got {type(value)}')
@@ -485,12 +485,9 @@ def filter_property(key: str, cls: Type[FilterT]) -> Callable[
         def deleter(self: FilterSink) -> None:
             del self._filters[key]
 
-        result = cast(
+        return cast(
             'FilterProperty[FilterT, FilterT]', property(getter, setter, deleter, func.__doc__),
         )
-        result.__filter_property__ = True
-
-        return result
 
     return decorator
 
@@ -554,7 +551,7 @@ class FilterSink:
     def volume(self) -> None:
         del self._filters['volume']
 
-    volume.__filter_property__ = True  # type: ignore
+    volume.fget.__filter_property__ = True
 
     @filter_property('equalizer', Equalizer)
     def equalizer(self) -> Optional[Equalizer]:
