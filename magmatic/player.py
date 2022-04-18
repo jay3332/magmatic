@@ -655,7 +655,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
         *filters: :class:`.BaseFilter`
             The filters to add. Must inherit from :class:`.BaseFilter`.
         """
-        self._filters.add(*filters)
+        self.filters.add(*filters)
         await self.apply_filters()
 
     async def remove_filters(self, *filters: Type[BaseFilter]) -> None:
@@ -681,7 +681,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
         *filters: Type[:class:`.BaseFilter`]
             The classes filters to remove. Each must subclass :class:`.BaseFilter`.
         """
-        self._filters.remove(*filters)
+        self.filters.remove(*filters)
         await self.apply_filters()
 
     async def overwrite_filters(self, *filters: BaseFilter) -> None:
@@ -703,7 +703,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
         *filters: :class:`.BaseFilter`
             The filters to overwrite. Must inherit from :class:`.BaseFilter`.
         """
-        self._filters.overwrite(*filters)
+        self.filters.overwrite(*filters)
         await self.apply_filters()
 
     async def clear_filters(self) -> None:
@@ -719,7 +719,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
             consider modifying the sink directly and then running :meth:`.Player.apply_filters`
             to apply them all at once.
         """
-        self._filters.clear()
+        self.filters.clear()
         await self.apply_filters()
 
     def __repr__(self) -> str:
