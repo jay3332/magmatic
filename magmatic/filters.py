@@ -470,9 +470,9 @@ def filter_property(key: str, cls: Type[FilterT]) -> Callable[
 ]:
     def decorator(func: Callable[..., Optional[FilterT]]) -> FilterProperty[FilterT, FilterT]:
         def getter(self: FilterSink) -> Optional[FilterT]:
-            result = self._filters.get(key)
-            assert isinstance(result, cls)
-            return result
+            resolved = self._filters.get(key)
+            assert isinstance(resolved, cls)
+            return resolved
 
         def setter(self: FilterSink, value: FilterT) -> None:
             if not isinstance(value, cls):
@@ -483,7 +483,10 @@ def filter_property(key: str, cls: Type[FilterT]) -> Callable[
         def deleter(self: FilterSink) -> None:
             del self._filters[key]
 
-        return cast('FilterProperty[FilterT, FilterT]', property(getter, setter, deleter, func.__doc__))
+        result = property(getter, setter, deleter, func.__doc__)
+        result.__filter_property__ = True
+
+        return cast('FilterProperty[FilterT, FilterT]', result)
 
     return decorator
 
@@ -510,6 +513,12 @@ class FilterSink:
     """
 
     __slots__ = ('_filters',)
+
+    _default: Dict[str, BaseFilter] = {
+        'volume': VolumeFilter(),
+        'equalizer': Equalizer(),
+        'timescale': TimescaleFilter(),
+    }
 
     def __init__(self) -> None:
         self._filters: Dict[str, BaseFilter] = {}
@@ -540,6 +549,8 @@ class FilterSink:
     @volume.deleter
     def volume(self) -> None:
         del self._filters['volume']
+
+    volume.__filter_property__ = True
 
     @filter_property('equalizer', Equalizer)
     def equalizer(self) -> Optional[Equalizer]:
@@ -648,13 +659,18 @@ class FilterSink:
         dict[:class:`str`, Any]
             The JSON-serializable payload for the filters.
         """
-        return {
+        result = {
             key: value.to_dict()
             for key, value in self._filters.items()
         }
+        return {**self._default, **result}
 
     def __repr__(self) -> str:
-        return '<FilterSink>'
+        if not self._filters:
+            return '<FilterSink>'
+
+        info = ' '.join(f'{k}={v!r}' for k, v in self._filters.items())
+        return f'<FilterSink {info}>'
 
     def __iter__(self) -> Iterator[BaseFilter]:
         return iter(self._filters.values())
