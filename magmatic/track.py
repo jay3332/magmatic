@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections import abc
-from typing import Any, ClassVar, Dict, Generic, Iterator, List, Optional, TYPE_CHECKING, Type, TypeVar, cast
+from typing import Any, ClassVar, Dict, Generic, Iterator, List, Optional, TYPE_CHECKING, Type, TypeVar, Sequence, cast
 
 from discord.ext.commands import Context, Converter
 
@@ -216,7 +215,7 @@ class LocalTrack(_TrackConverter[MetadataCT]):
     _preferred_source = Source.local
 
 
-class Playlist(abc.Sequence[Track[MetadataT]], Generic[MetadataT]):
+class Playlist(Sequence[Track[MetadataT]], Generic[MetadataT]):
     """Represents a playlist of tracks, usually retrieved by search.
 
     See :meth:`.Node.search_track` and :meth:`.Node.search_tracks` for more information.
