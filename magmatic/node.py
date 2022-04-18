@@ -28,7 +28,7 @@ import discord
 from aiohttp import ClientSession, ClientWebSocketResponse, WSMsgType, WSServerHandshakeError
 from discord.backoff import ExponentialBackoff
 
-from .enums import ErrorSeverity, LoadType, OpCode, Source
+from .enums import ErrorSeverity, EventType, LoadType, OpCode, Source
 from .errors import (
     AuthorizationFailure,
     ConnectionFailure,
@@ -88,6 +88,7 @@ class ConnectionManager:
         '_ws_resume_key',
         '_listener',
         '_serializer',
+        '_keep_alive',
     )
 
     REQUEST_MAX_TRIES: ClassVar[int] = 1
@@ -124,6 +125,7 @@ class ConnectionManager:
         self._ws_resume_key: str = os.urandom(8).hex()
         self._listener: Optional[asyncio.Task] = None
         self._serializer: JSONSerializer[Dict[str, Any]] = serializer
+        self._keep_alive: bool = True
 
     @property
     def origin(self) -> str:
@@ -220,8 +222,10 @@ class ConnectionManager:
 
         await self.send_resume()
 
-    async def disconnect(self) -> None:
+    async def disconnect(self, *, reconnect: bool = True) -> None:
         """Disconnects the current connection from Lavalink."""
+        self._keep_alive = reconnect
+
         if self._listener and not self._listener.done():
             self._listener.cancel()
 
@@ -260,6 +264,17 @@ class ConnectionManager:
 
             player._update_state(state)
 
+        elif op is OpCode.event:
+            event = EventType(data['event'])
+
+            if event is EventType.track_end:
+                player._track = None
+
+            elif event is EventType.websocket_closed:
+                await self.connect(reconnect=self._keep_alive)
+
+            # TODO: events
+
     async def listen(self) -> None:
         if self._ws is None:
             return
@@ -274,7 +289,7 @@ class ConnectionManager:
                 log.warning(f'[Node {self.node.identifier!r}]: Attempting reconnect in {delay} seconds')
 
                 await asyncio.sleep(delay)
-                await self.connect(reconnect=True)
+                await self.connect(reconnect=self._keep_alive)
 
                 continue
 
@@ -685,7 +700,7 @@ class Node(Generic[ClientT]):
         for player in self._players.values():
             await player.destroy(disconnect=disconnect_players)
 
-        await self.connection.disconnect()
+        await self.connection.disconnect(reconnect=False)
 
     async def stop(self, *, disconnect_players: bool = True) -> None:
         """|coro|

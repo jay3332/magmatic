@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, Generic, Optional, TYPE_CHECKING, Type, TypeVar, Union
 
 import discord
 from discord import VoiceProtocol
 from discord.utils import MISSING
 
-from .filters import BaseFilter, FilterSink
+from .errors import NotConnected
+from .filters import BaseFilter, Equalizer, FilterSink
 
 if TYPE_CHECKING:
     from discord.abc import Snowflake
@@ -15,6 +17,7 @@ if TYPE_CHECKING:
     from discord.types.voice import GuildVoiceState, VoiceServerUpdate
 
     from .node import Node
+    from .track import Track
 
 ClientT = TypeVar('ClientT', bound=discord.Client)
 
@@ -79,6 +82,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
         self.node: Node[ClientT] = node
         self.guild: Snowflake = guild
 
+        self._track: Optional[Track] = None
         self._paused: bool = False
         self._volume: int = 100
         self._filters: FilterSink = MISSING  # lazily initialized
@@ -138,6 +142,29 @@ class Player(VoiceProtocol, Generic[ClientT]):
         return self.guild.me.voice
 
     @property
+    def track(self) -> Optional[Track]:
+        """Optional[:class:`.Track`]: The currently playing track. ``None`` if no track is currently playing."""
+        return self._track
+
+    @property
+    def position(self) -> float:
+        """float: The seek position of the player in seconds.
+
+        In simpler terms, how many seconds the current track has been playing for.
+        """
+        if not self.is_playing():
+            return 0
+
+        assert self._track is not None
+
+        if self.is_paused():
+            return min(self._previous_position, self._track.duration)
+
+        # We must use time.time() here since we are comparing Unix epochs.
+        offset = time.time() - self._previous_update_time
+        return min(self._previous_position + offset, self._track.duration)
+
+    @property
     def volume(self) -> int:
         """:class:`int`: The current volume of the player."""
         return self._volume
@@ -153,6 +180,17 @@ class Player(VoiceProtocol, Generic[ClientT]):
 
         return self._filters
 
+    @property
+    def equalizer(self) -> Optional[Equalizer]:
+        """:class:`.Equalizer`: The equalizer currently applied to the player's :class:`.FilterSink`.
+
+        This shortcut exists for backwards compatibility purposes. This will be ``None`` if no equalizer is applied.
+
+        Additionally, note that any change in the equalizer made using this property will not be applied
+        until :meth:`.Player.apply_filters` is called.
+        """
+        return self.filters.equalizer
+
     def is_connected(self) -> bool:
         """:class:`bool`: Returns whether the player is connected to a voice channel."""
         return (
@@ -161,6 +199,10 @@ class Player(VoiceProtocol, Generic[ClientT]):
             and self.guild.me.voice is not None
             and self.guild.me.voice.channel is not None
         )
+
+    def is_playing(self) -> bool:
+        """:class:`bool`: Returns whether the player is currently playing a track."""
+        return self.is_connected() and self._track is not None
 
     def is_self_muted(self) -> bool:
         """:class:`bool`: Returns whether the player's voice state is self-muted."""
@@ -334,6 +376,106 @@ class Player(VoiceProtocol, Generic[ClientT]):
 
             self.node._players.pop(self.guild_id, None)
             self.cleanup()
+
+    async def play(
+        self,
+        track: Track,
+        *,
+        start: Optional[float] = None,
+        end: Optional[float] = None,
+        volume: Optional[int] = None,
+        replace: bool = True,
+        pause: bool = False,
+    ) -> None:
+        """|coro|
+
+        Starts playing the given track.
+
+        Parameters
+        ----------
+        track: :class:`.Track`
+            The track to start playing.
+        start: Optional[:class:`float`]
+            The time at which to start playing the track in seconds.
+            Leave blank to start playing the beginning of the track.
+        end: Optional[:class:`float`]
+            The time at which to stop playing the track in seconds.
+            Leave blank to play the track through completely.
+        volume: Optional[:class:`int`]
+            The volume at which to play the track. Must be between 0 and 1000.
+            Leave blank to play at the current volume.
+        replace: bool
+            Whether to halt playing the current playing track is a track is currently playing.
+            If set to ``False``, this method will silently do nothing if there is already audio playnig.
+
+            Defaults to ``True``.
+        pause: bool
+            Whether to pause the track upon playing. Defaults to ``False``
+
+        Raises
+        ------
+        NotConnected
+            The player is not connected to a voice channel.
+        ValueError
+            - The given volume is not between 0 and 1000.
+            - The given start time is below 0.
+            - The given end time is less than the start time.
+        """
+        if not self.is_connected():
+            raise NotConnected(self)
+
+        if replace or not self.is_playing():
+            self._reset_state()
+            self._paused = False
+
+        if start is not None:
+            if start < 0:
+                raise ValueError('start time must be greater than 0')
+
+            if end is not None and start < end:
+                raise ValueError('start must be greater than end')
+
+        if volume is not None:
+            if not 0 <= volume <= 1000:
+                raise ValueError('volume must be between 0 and 1000')
+
+            self._volume = volume
+
+        await self.node.connection.send_play_track(
+            guild_id=self.guild_id,
+            track=track.id,
+            start_time=int((start or 0) * 1000),
+            end_time=int(end * 1000) if end is not None else None,
+            volume=volume,
+            no_replace=not replace,
+            pause=pause,
+        )
+
+        self._track = track
+        log.debug(f'[Node {self.node.identifier!r}] Playing track {track!r} in guild ID {self.guild_id}')
+
+    async def seek(self, position: float) -> None:
+        """|coro|
+
+        Seeks to the given position (in seconds) in the current track.
+
+        Parameters
+        ----------
+        position: float
+            The position, in seconds, of where to seek to.
+        """
+        log.debug(f'[Node {self.node.identifier!r}] Seeking to {position}s in guild ID {self.guild_id}')
+        await self.node.connection.send_seek(guild_id=self.guild_id, position=int(position * 1000))
+
+    async def stop(self) -> None:
+        """|coro|
+
+        Stops the current playing track.
+        """
+        log.debug(f'[Node {self.node.identifier!r}] Stopping track in guild ID {self.guild_id}')
+
+        await self.node.connection.send_stop(guild_id=self.guild_id)
+        self._track = None
 
     # This following three methods are really similar to Player.connect and themselves;
     # we could possibly merge them in the future.

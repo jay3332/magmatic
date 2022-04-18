@@ -9,6 +9,7 @@ if TYPE_CHECKING:
 
     from .enums import ErrorSeverity, Source
     from .node import Node
+    from .player import Player
     from .pool import NodePool
 
 __all__ = (
@@ -23,6 +24,7 @@ __all__ = (
     'PlayerNotFound',
     'NoMatches',
     'LoadFailed',
+    'NotConnected',
 )
 
 
@@ -224,3 +226,21 @@ class LoadFailed(MagmaticException):
         self.severity: ErrorSeverity = severity
 
         super().__init__(f'Could not load tracks: {message} (Severity: {severity.name!r})')
+
+
+class NotConnected(MagmaticException):
+    """Raised when a player attempted to do an action that required a connection,
+    but the player was not connected.
+
+    Attributes
+    ----------
+    player: :class:`.Player`
+        The player that was not connected.
+    """
+
+    __slots__ = ('player',)
+
+    def __init__(self, player: Player) -> None:
+        self.player: Player = player
+
+        super().__init__(f'Player {player!r} (on node {player.node.identifier!r}) is not connected')
