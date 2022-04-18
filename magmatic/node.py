@@ -969,10 +969,7 @@ class Node(Generic[ClientT]):
                 return None
 
         if prefer_selected_track and isinstance(result, Playlist):
-            try:
-                return result.selected_track
-            except IndexError:
-                return result.tracks[0]
+            return result.selected_track or result.first
 
         return result
 
