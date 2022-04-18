@@ -314,3 +314,6 @@ class Playlist(Sequence[Track[MetadataT]], Generic[MetadataT]):
 
     def __len__(self) -> int:
         return len(self._tracks)
+
+    def __repr__(self) -> str:
+        return f'<Playlist name={self.name!r} selected_track={self.selected_track!r}>'
