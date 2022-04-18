@@ -593,7 +593,8 @@ class Node(Generic[ClientT]):
         *,
         self_mute: bool = False,
         self_deaf: bool = False,
-    ) -> Player:
+        cls: Type[PlayerT] = Player,
+    ) -> PlayerT:
         """|coro|
 
         Creates a player for the given voice channel on this node and establishes a
@@ -613,13 +614,21 @@ class Node(Generic[ClientT]):
             Whether to self-mute upon connecting. Defaults to ``False``.
         self_deaf: :class:`bool`
             Whether to self-deafen upon connecting. Defaults to ``False``.
+        cls: Type[:class:`Player`]
+            The player subclass to use if you would like custom behavior. This must be a class
+            that subclasses :class:`.Player`.
+
+            Defaults to :class:`.Player`.
+
+            .. note::
+                The class passed will only be applied if a new player is created.
 
         Returns
         -------
         :class:`.Player`
             The player associated with the given voice channel.
         """
-        player = self.get_player(channel.guild)
+        player = self.get_player(channel.guild, cls=cls)
         await player.connect(channel, self_mute=self_mute, self_deaf=self_deaf)
 
         return player
