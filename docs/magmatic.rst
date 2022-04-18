@@ -267,7 +267,7 @@ Websocket-related Events
     :param player: The player that encountered a websocket close.
     :type player: :class:`Player`
     :param event: The event object.
-    :type event: :class:`WebsocketCloseEvent`
+    :type event: :class:`WebSocketCloseEvent`
 
 Stats
 -----
