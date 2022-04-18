@@ -125,7 +125,7 @@ class VolumeFilter(BaseFilter):
 
     @volume.setter
     def volume(self, volume: float) -> None:
-        if not isinstance(volume, float):
+        if not isinstance(volume, (int, float)):
             raise TypeError(f'volume must be a float, not {type(volume)!r}')
 
         if not 0 <= volume <= 5:
@@ -540,7 +540,7 @@ class FilterSink:
 
     @volume.setter
     def volume(self, value: Union[VolumeFilter, float]) -> None:
-        if isinstance(value, float):
+        if isinstance(value, (int, float)):
             value = VolumeFilter(value)
         elif not isinstance(value, VolumeFilter):
             raise TypeError(f'expected VolumeFilter or float, got {type(value)}')
