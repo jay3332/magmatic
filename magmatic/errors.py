@@ -7,6 +7,7 @@ from discord.abc import Snowflake
 if TYPE_CHECKING:
     from aiohttp import ClientResponse
 
+    from .enums import ErrorSeverity, Source
     from .node import Node
     from .pool import NodePool
 
@@ -16,15 +17,19 @@ __all__ = (
     'ConnectionFailure',
     'HandshakeFailure',
     'AuthorizationFailure',
-    'NoMatches',
+    'NoMatchingNodes',
     'NoAvailableNodes',
     'NodeConflict',
     'PlayerNotFound',
+    'NoMatches',
+    'LoadFailed',
 )
 
 
 class MagmaticException(Exception):
     """The base exception for all errors raised by Magmatic."""
+
+    __slots__ = ()
 
 
 class HTTPException(MagmaticException):
@@ -125,7 +130,7 @@ class NoAvailableNodes(MagmaticException):
         super().__init__('No available nodes on this pool.')
 
 
-class NoMatches(MagmaticException):
+class NoMatchingNodes(MagmaticException):
     """Raised when there are no node matches.
 
     Attributes
@@ -173,3 +178,49 @@ class PlayerNotFound(MagmaticException):
         self.guild: Snowflake = guild
 
         super().__init__(f'Player for guild {guild!r} not found')
+
+
+class NoMatches(MagmaticException):
+    """Raised when there are no matches for a search query or source.
+
+    Attributes
+    ----------
+    node: :class:`.Node`
+        The Lavalink node that could not find any matches
+    query: str
+        The query that could not be matched
+    source: Optional[:class:`.Source`]
+        The source that was given. Could be ``None`` if no source was given.
+    """
+
+    __slots__ = ('node', 'query', 'source')
+
+    def __init__(self, node: Node, query: str, source: Optional[Source]) -> None:
+        self.node: Node = node
+        self.query: str = query
+        self.source: Optional[Source] = source
+
+        super().__init__(f'No matches found for query {query!r} (Source: {source and source.name})')
+
+
+class LoadFailed(MagmaticException):
+    """Raised when loading tracks while searching fails.
+
+    Attributes
+    ----------
+    node: :class:`.Node`
+        The Lavalink node that failed loading tracks
+    message: str
+        The error message provided by Lavalink
+    severity: :class:`.ErrorSeverity`
+        The error severity of the error provided by Lavalink
+    """
+
+    __slots__ = ('node', 'message', 'severity')
+
+    def __init__(self, node: Node, message: str, severity: ErrorSeverity) -> None:
+        self.node: Node = node
+        self.message: str = message
+        self.severity: ErrorSeverity = severity
+
+        super().__init__(f'Could not load tracks: {message} (Severity: {severity.name!r})')

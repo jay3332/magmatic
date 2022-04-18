@@ -51,7 +51,7 @@ class Stats:
 
     Attributes
     ----------
-    uptime: int
+    uptime: float
         The amount of time the node has been running, in seconds.
     players: int
         The amount of players currently connected to the node.
@@ -90,7 +90,7 @@ class Stats:
     )
 
     def __init__(self, data: Dict[str, Any]) -> None:
-        self.uptime: int = data['uptime']
+        self.uptime: float = data['uptime'] / 1000
 
         self.players: int = data['players']
         self.playing_players: int = data['playingPlayers']

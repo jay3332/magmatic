@@ -38,6 +38,7 @@ setup(
             'sphinx>=4.5',
             'furo',
             'discord.py @ git+https://github.com/rapptz/discord.py',
+            'enum-tools',
         ],
     },
     python_requires='>=3.8',

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from typing import (
     Any,
     Callable,
@@ -15,19 +16,30 @@ from typing import (
     Optional,
     Protocol,
     TYPE_CHECKING,
+    Tuple,
     Type,
     TypeVar,
     Union,
     cast,
+    overload,
 )
 
 import discord
 from aiohttp import ClientSession, ClientWebSocketResponse, WSMsgType, WSServerHandshakeError
 from discord.backoff import ExponentialBackoff
 
-from .enums import OpCode
-from .errors import AuthorizationFailure, ConnectionFailure, HTTPException, HandshakeFailure, PlayerNotFound
+from .enums import ErrorSeverity, LoadType, OpCode, Source
+from .errors import (
+    AuthorizationFailure,
+    ConnectionFailure,
+    HTTPException,
+    HandshakeFailure,
+    LoadFailed,
+    NoMatches,
+    PlayerNotFound,
+)
 from .player import Player
+from .track import Playlist, Track
 from .stats import Stats
 
 if TYPE_CHECKING:
@@ -36,6 +48,7 @@ if TYPE_CHECKING:
 
     RequestMethod = Literal['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
     PlayerT = TypeVar('PlayerT', bound=Player[Any])
+    MetadataT = TypeVar('MetadataT')  # This could be covariant, but usually the type will be resolved indirectly
 
 ClientT = TypeVar('ClientT', bound=discord.Client)
 JsonT = TypeVar('JsonT', bound=Union[Dict[str, Any], List[Any], Any])
@@ -444,6 +457,8 @@ class Node(Generic[ClientT]):
         The voice region of this node.
     """
 
+    URL_REGEX: ClassVar[re.Pattern[str]] = re.compile(r'^https?://(?:www\.)?.+')
+
     if TYPE_CHECKING:
         _cleanup: Callable[[], None]
 
@@ -705,6 +720,261 @@ class Node(Generic[ClientT]):
             An HTTP error occurred while sending the request.
         """
         return await self.connection.request(method, endpoint, **params)
+
+    async def _load_tracks(
+        self,
+        query: str,
+        source: Optional[Source],
+        strict: bool,
+    ) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+        if source is Source.spotify:
+            raise NotImplementedError('Spotify search is not implemented yet.')
+
+        elif source is Source.local:
+            source = None
+
+        if source is not None and not strict:
+            subject = query.strip('<>')
+            if self.URL_REGEX.match(subject):
+                source = None
+
+        if source is not None:
+            query = f'{source.value}:{query}'
+
+        results = await self.request('GET', 'loadtracks', identifier=query)
+        load_type = LoadType(results['loadType'])
+
+        if load_type is LoadType.no_matches:
+            raise NoMatches(self, query, source)
+
+        elif load_type is LoadType.load_failed:
+            exception = results['exception']
+            severity = ErrorSeverity(exception['severity'])
+
+            raise LoadFailed(self, exception['message'], severity)
+
+        elif load_type is LoadType.playlist_loaded:
+            return results['playlistInfo'], results['tracks']
+
+        return None, results['tracks']
+
+    @overload
+    async def search_tracks(
+        self,
+        query: str,
+        *,
+        source: Optional[Source] = ...,
+        strict: bool = ...,
+        flatten_playlists: Literal[True] = ...,
+        limit: Optional[int] = ...,
+        metadata: MetadataT = ...,
+    ) -> List[Track[MetadataT]]:
+        ...
+
+    @overload
+    async def search_tracks(
+        self,
+        query: str,
+        *,
+        source: Optional[Source] = ...,
+        strict: bool = ...,
+        flatten_playlists: Literal[False] = ...,
+        limit: Optional[int] = ...,
+        metadata: MetadataT = ...,
+    ) -> Union[List[Track[MetadataT]], Playlist[MetadataT]]:
+        ...
+
+    async def search_tracks(
+        self,
+        query: str,
+        *,
+        source: Optional[Source] = None,
+        strict: bool = False,
+        flatten_playlists: bool = False,
+        limit: Optional[int] = None,
+        metadata: MetadataT = cast(Any, None),
+    ) -> Union[List[Track[MetadataT]], Playlist[MetadataT]]:
+        """|coro|
+
+        Finds tracks that match the given query on the given source.
+
+        Parameters
+        ----------
+        query: str
+            The search query.
+        source: Optional[:class:`.Source`]
+            The source to search on.
+            If no source is given then only URLs or specific identifiers can be passed as the query.
+        strict: bool
+            If ``False`` (the default), this will automatically ignore the source if a URL is passed.
+            This is usually what you want.
+
+            If ``True``, then the URL will be searched on the given source.
+            This should only be used if you require the :attr:`.Track.source` to be consistent every time.
+        flatten_playlists: bool
+            Whether to just return a list of tracks if a playlist was found for your search query.
+            When set to ``True``, this method will always return a :py:class:`list`, and never :class:`.Playlist`.
+
+            Defaults to ``False``.
+        limit: Optional[int]
+            The maximum number of tracks to return. This is useful to limit the amount of
+            Track objects that are created.
+
+            For playlists, this will be ignored. Consider setting ``flatten_playlists`` to ``True``
+            if this circumstance matters.
+
+            If ``None`` (the default), then all tracks will be returned.
+        metadata
+            The metadata to associate with the tracks and/or playlist.
+            Metadata associated with playlists will be passed down to their child tracks.
+
+            Could be useful for associating a requester with the playlist.
+            This is optional and defaults to ``None``.
+
+        Returns
+        -------
+        Union[list[:class:`Track`], Playlist]
+            A list of tracks that matched your search query.
+
+            If a playlist was returned and `flatten_playlists` was set to ``True``,
+            a :class:`.Playlist` object will be returned instead.
+
+        Raises
+        ------
+        NoMatches
+            No tracks were found with your query.
+        LoadFailed
+            The search query failed to load.
+        """
+        playlist, tracks = await self._load_tracks(query, source, strict)
+        if flatten_playlists:
+            playlist = None
+
+        if limit is not None and not playlist:
+            tracks = tracks[:limit]
+
+        tracks = [
+            Track(id=track['track'], data=track['info'], metadata=metadata)
+            for track in tracks
+        ]
+
+        if playlist:
+            return Playlist(tracks, playlist, metadata=metadata)
+
+        return tracks
+
+    @overload
+    async def search_track(
+        self,
+        query: str,
+        *,
+        source: Optional[Source] = ...,
+        strict: bool = ...,
+        resolve_playlists: Literal[True] = ...,
+        prefer_selected_track: bool = ...,
+        metadata: MetadataT = ...,
+    ) -> Optional[Track[MetadataT]]:
+        ...
+
+    @overload
+    async def search_track(
+        self,
+        query: str,
+        *,
+        source: Optional[Source] = ...,
+        strict: bool = ...,
+        resolve_playlists: Literal[False] = ...,
+        prefer_selected_track: bool = ...,
+        metadata: MetadataT = ...,
+    ) -> Union[Playlist[MetadataT], Track[MetadataT]]:
+        ...
+
+    async def search_track(
+        self,
+        query: str,
+        *,
+        source: Optional[Source] = None,
+        strict: bool = False,
+        resolve_playlists: bool = False,
+        prefer_selected_track: bool = True,
+        metadata: MetadataT = cast(Any, None),
+    ) -> Union[Playlist[MetadataT], Track[MetadataT], None]:
+        """|coro|
+
+        Finds a track that matches the given query in the given source.
+
+        Parameters
+        ----------
+        query: str
+            The search query.
+        source: Optional[:class:`.Source`]
+            The source to search on.
+            If no source is given then only URLs or specific identifiers can be passed as the query.
+        strict: bool
+            If ``False`` (the default), this will automatically ignore the source if a URL is passed.
+            This is usually what you want.
+
+            If ``True``, then the URL will be searched on the given source.
+            This should only be used if you require the :attr:`.Track.source` to be consistent every time.
+        resolve_playlists: bool
+            Whether to return a track in the playlist if one was returned.
+            If ``True``, then the track returned will never be a :class:`.Playlist` object, however it
+            will have the chance of returning ``None`` if no tracks are in the playlist.
+
+            Else, if a playlist is found, this will still return the :class:`.Playlist` object.
+
+            Defaults to ``False``.
+        prefer_selected_track: bool
+            If set to ``True`` and a playlist is returned, then the :attr:`.Playlist.selected_track` will be returned.
+            If there is no selected track, this will fall back to the first track in the playlist.
+
+            Else, the first track will be returned.
+
+            This parameter only works in conjunction with `resolve_playlists` set to ``True``.
+
+            Defaults to ``True``.
+        metadata
+            The metadata to associate with the tracks and/or playlist.
+            Metadata associated with playlists will be passed down to their child tracks.
+
+            Could be useful for associating a requester with the playlist.
+            This is optional and defaults to ``None``.
+
+        Returns
+        -------
+        Union[:class:`.Playlist`, :class:`.Track`, None]
+            The track or playlist that matches the query.
+
+        Raises
+        ------
+        NoMatches
+            No tracks were found with your query.
+        LoadFailed
+            The search query failed to load.
+        """
+        # noinspection PyTypeChecker
+        result = await self.search_tracks(
+            query,
+            source=source,
+            strict=strict,
+            flatten_playlists=resolve_playlists and not prefer_selected_track,  # type: ignore
+            limit=1,
+            metadata=metadata,
+        )
+
+        if isinstance(result, list):
+            try:
+                return result[0]
+            except IndexError:
+                return None
+
+        if prefer_selected_track and isinstance(result, Playlist):
+            try:
+                return result.selected_track
+            except IndexError:
+                return result.tracks[0]
+
+        return result
 
     def __repr__(self) -> str:
         return f'<Node {self.identifier!r}>'

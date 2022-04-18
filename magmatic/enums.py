@@ -4,6 +4,10 @@ from typing import TYPE_CHECKING
 __all__ = (
     'OpCode',
     'EventType',
+    'LoadType',
+    'Source',
+    'LoadSource',
+    'ErrorSeverity',
 )
 
 
@@ -60,6 +64,8 @@ class LoadType(Enum):
     """|enum|
 
     Represents the response type of a track loading request.
+
+    This is usually used internally.
     """
     if TYPE_CHECKING:
         value: str
@@ -73,8 +79,8 @@ class LoadType(Enum):
     #: Tracks that matched the search result were loaded. This usually indicates multiple tracks.
     search_result = 'SEARCH_RESULT'
 
-    #: No tracks were loaded given the query.
-    no_tracks = 'NO_TRACKS'
+    #: No tracks matched the given query.
+    no_matches = 'NO_MATCHES'
 
     #: The track loading request failed.
     load_failed = 'LOAD_FAILED'
@@ -88,16 +94,44 @@ class LoadType(Enum):
 class Source(Enum):
     """|enum|
 
-    Represents the source of a track, e.g. Youtube.
+    The source to use when searching for a track.
+    See :meth:`.Node.search_tracks` for more information on track searching.
+
+    This is not to be confused with :class:`.LoadSource`, which represents the source of
+    a track that has already been loaded.
     """
     if TYPE_CHECKING:
         value: str
 
-    #: The track was loaded from a YouTube video.
-    youtube = 'youtube'
+    #: Searches YouTube for tracks.
+    youtube = 'ytsearch'
 
-    #: The track was loaded from a YouTube Music track.
-    youtube_music = 'youtube_music'
+    #: Searches YouTube Music for tracks.
+    youtube_music = 'ytmsearch'
+
+    #: Searches SoundCloud for tracks.
+    soundcloud = 'scsearch'
+
+    #: Searches Spotify for tracks.
+    spotify = 'spotify'  # This one is special
+
+    #: Searches a local file for tracks.
+    local = 'local'  # This one is also special; do not include the directive in the search query
+
+
+class LoadSource(Enum):
+    """|enum|
+
+    Represents the source of a loaded track, e.g. YouTube.
+
+    This is not to be confused with :class:`.Source`, which is to be used when searching for tracks.
+    Rather, this enum represents the source of a track that has been loaded.
+    """
+    if TYPE_CHECKING:
+        value: str
+
+    #: The track was loaded from a YouTube video or YouTube music track.
+    youtube = 'youtube'
 
     #: The track was loaded from a SoundCloud track.
     soundcloud = 'soundcloud'
@@ -105,3 +139,46 @@ class Source(Enum):
     # TODO: Upsell Spotify support when it's available.
     #: The track was loaded from Spotify.
     spotify = 'spotify'
+
+    #: The track was loaded from a Twitch track.
+    twitch = 'twitch'
+
+    #: The track was loaded from a Bandcamp track.
+    bandcamp = 'bandcamp'
+
+    #: The track was loaded from Vimeo.
+    vimeo = 'vimeo'
+
+    #: The track was loaded from Beam.
+    beam = 'beam'
+
+    #: The track was loaded from Nico.
+    nico = 'nico'
+
+    #: The track was loaded from getyarn.io.
+    getyarn = 'getyarn.io'
+
+    #: The track was loaded from a local file.
+    local = 'local'
+
+    #: The track was loaded from a URL via HTTP.
+    http = 'http'
+
+    #: The track was loaded from a stream of audio.
+    stream = 'stream'
+
+
+class ErrorSeverity(Enum):
+    """|enum|
+
+    Represents the severity of an error received from Lavalink.
+    """
+
+    #: This error is a common, non-fatal error. This is caused by the user input itself and not by Lavalink.
+    common = "COMMON"
+
+    #: This error's cause may not be known and is usually caused by outside factors, e.g. a response in an unexpected format.
+    suspicious = "SUSPICIOUS"
+
+    #: This error was caused by an issue with Lavalink.
+    fault = "FAULT"

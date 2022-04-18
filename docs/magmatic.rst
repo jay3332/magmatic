@@ -39,7 +39,37 @@ Players
 Player
 ~~~~~~
 
-.. autoclass:: Player
+.. autoclass:: Player(*, node: :class:`Node`, guild: :class:`discord.abc.Snowflake`)
+    :members:
+
+Tracks
+------
+
+Track
+~~~~~
+
+.. autoclass:: Track()
+    :members:
+
+Playlist
+~~~~~~~~
+
+.. autoclass:: Playlist()
+    :members:
+
+Track Converters
+~~~~~~~~~~~~~~~~
+
+.. autoclass:: YoutubeTrack()
+    :members:
+
+.. autoclass:: YoutubeMusicTrack()
+    :members:
+
+.. autoclass:: SoundCloudTrack()
+    :members:
+
+.. autoclass:: SpotifyTrack()
     :members:
 
 Filters
@@ -84,20 +114,47 @@ Stats
 Stats
 ~~~~~
 
-.. autoclass:: Stats
+.. autoclass:: Stats()
     :members:
 
 MemoryStats
 ~~~~~~~~~~~
 
-.. autoclass:: MemoryStats
+.. autoclass:: MemoryStats()
     :members:
 
 Enums
 -----
 
-.. autoclass:: OpCode
+Source
+~~~~~~
+
+.. autoenum:: Source()
     :members:
 
-.. autoclass:: EventType
+LoadSource
+~~~~~~~~~~
+
+.. autoenum:: LoadSource()
+    :members:
+
+LoadType
+~~~~~~~~
+
+.. autoenum:: LoadType()
+    :members:
+
+ErrorSeverity
+~~~~~~~~~~~~~
+
+.. autoenum:: ErrorSeverity()
+    :members:
+
+Internal Enums
+~~~~~~~~~~~~~~
+
+.. autoenum:: OpCode()
+    :members:
+
+.. autoenum:: EventType()
     :members:

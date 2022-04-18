@@ -7,14 +7,13 @@ from typing import Any, Coroutine, Dict, Final, Generic, Iterator, List, Optiona
 from discord import Client
 from discord.utils import copy_doc
 
-from .errors import NoAvailableNodes, NoMatches, NodeConflict, PlayerNotFound
+from .errors import NoAvailableNodes, NoMatchingNodes, NodeConflict, PlayerNotFound
 from .node import JSONSerializer, Node
+from .player import Player
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
     from discord.abc import Snowflake
-
-    from .player import Player
 
     PlayerT = TypeVar('PlayerT', bound=Player[Any])
 
@@ -274,7 +273,7 @@ class NodePool(Generic[ClientT]):
         ------
         NoAvailableNodes
             There are no nodes on this node pool.
-        NoMatches
+        NoMatchingNodes
             No nodes on this pool match the identifier and/or region.
         """
         if not self._nodes:
@@ -284,7 +283,7 @@ class NodePool(Generic[ClientT]):
             try:
                 return self._nodes[identifier]
             except KeyError:
-                raise NoMatches(self, identifier, region)
+                raise NoMatchingNodes(self, identifier, region)
 
         if region is not None:
             nodes = (node for node in self.walk_nodes() if node.region == region)
@@ -294,7 +293,7 @@ class NodePool(Generic[ClientT]):
         try:
             return sorted(nodes, key=lambda node: node.player_count)[0]
         except IndexError:
-            raise NoMatches(self, identifier, region)
+            raise NoMatchingNodes(self, identifier, region)
 
     def get_player(
         self,
