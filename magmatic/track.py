@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Dict, Generic, Iterator, List, Optional, TYPE_CHECKING, Type, TypeVar, Sequence, cast
 
-from discord.ext.commands import Context, Converter
+from discord.ext.commands import BadArgument, Context, Converter, Parameter, run_converters
 
+from .errors import NoMatches
 from .enums import LoadSource, Source
 
 if TYPE_CHECKING:
@@ -11,6 +12,7 @@ if TYPE_CHECKING:
 
 MetadataT = TypeVar('MetadataT')
 MetadataCT = TypeVar('MetadataCT', bound=Type[Any])
+MetadataCT_co = TypeVar('MetadataCT_co', bound=Type[Any], covariant=True)
 
 __all__ = (
     'Track',
@@ -141,14 +143,20 @@ class Track(Generic[MetadataT]):
         return f'<Track id={self.id!r} title={self.title!r} uri={self.uri!r}>'
 
 
-class _MetadataAwareTrackConverter(Converter[Track], Generic[MetadataCT]):
-    def __init__(self, cls: Type[_TrackConverter[Any]], converter: MetadataCT) -> None:
-        self.cls: Type[_TrackConverter[Any]] = cls
-        self.converter: MetadataCT = converter
+class _MetadataAwareTrackConverter(Converter[Track[MetadataCT_co]], Generic[MetadataCT_co]):
+    _unknown_parameter_sentinel: ClassVar[Any] = Parameter(name='unknown', kind=Parameter.POSITIONAL_OR_KEYWORD)
 
-    # noinspection PyProtocol
-    async def convert(self, ctx: Context[Any], argument: str) -> Track:
-        ...
+    def __init__(self, cls: Type[_TrackConverter[Any]], converter: MetadataCT_co) -> None:
+        self.cls: Type[_TrackConverter[Any]] = cls
+        self.converter: MetadataCT_co = converter
+
+    async def convert(self, ctx: Context[Any], argument: str) -> Track[MetadataCT_co]:  # type: ignore
+        param = ctx.current_parameter or self._unknown_parameter_sentinel
+        metadata = await run_converters(ctx, self.converter, argument, param)
+        track = await self.cls.convert(ctx, argument)
+        track.metadata = metadata
+
+        return track  # type: ignore
 
 
 class _TrackConverter(Track[MetadataCT]):
@@ -161,8 +169,18 @@ class _TrackConverter(Track[MetadataCT]):
         return _MetadataAwareTrackConverter(cls, item)
 
     @classmethod
-    async def convert(cls: Type[TrackT], ctx: Context, argument: str) -> TrackT:
-        ...
+    async def convert(cls, _ctx: Context[Any], argument: str) -> Track[None]:
+        from .pool import get_node
+
+        node = get_node()
+        try:
+            track = await node.search_track(query=argument, source=cls._preferred_source, metadata=None)
+            if track is None:
+                raise NoMatches(node, argument, cls._preferred_source)
+
+            return track
+        except NoMatches:
+            raise BadArgument(f'No tracks found with query {argument!r}')
 
 
 class YoutubeTrack(_TrackConverter[MetadataCT]):
