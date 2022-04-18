@@ -32,6 +32,8 @@ if TYPE_CHECKING:
     NewSetterT = TypeVar('NewSetterT')
 
     class FilterProperty(property, Generic[FilterT, SetterT]):
+        __filter_property__: Literal[True]
+
         def __get__(self, instance: FilterSink, owner: Optional[Type[FilterSink]] = None) -> Optional[FilterT]:
             return cast(FilterT, super().__get__(instance, owner))
 
@@ -483,10 +485,12 @@ def filter_property(key: str, cls: Type[FilterT]) -> Callable[
         def deleter(self: FilterSink) -> None:
             del self._filters[key]
 
-        result = property(getter, setter, deleter, func.__doc__)
+        result = cast(
+            'FilterProperty[FilterT, FilterT]', property(getter, setter, deleter, func.__doc__),
+        )
         result.__filter_property__ = True
 
-        return cast('FilterProperty[FilterT, FilterT]', result)
+        return result
 
     return decorator
 
@@ -514,7 +518,7 @@ class FilterSink:
 
     __slots__ = ('_filters',)
 
-    _default: Dict[str, BaseFilter] = {
+    _default: ClassVar[Dict[str, BaseFilter]] = {
         'volume': VolumeFilter(),
         'equalizer': Equalizer(),
         'timescale': TimescaleFilter(),
@@ -550,7 +554,7 @@ class FilterSink:
     def volume(self) -> None:
         del self._filters['volume']
 
-    volume.__filter_property__ = True
+    volume.__filter_property__ = True  # type: ignore
 
     @filter_property('equalizer', Equalizer)
     def equalizer(self) -> Optional[Equalizer]:
@@ -663,7 +667,10 @@ class FilterSink:
             key: value.to_dict()
             for key, value in self._filters.items()
         }
-        return {**self._default, **result}
+        return {
+            **{k: v.to_dict() for k, v in self._default.items()},
+            **result,
+        }
 
     def __repr__(self) -> str:
         if not self._filters:

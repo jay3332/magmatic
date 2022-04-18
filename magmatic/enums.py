@@ -8,6 +8,7 @@ __all__ = (
     'Source',
     'LoadSource',
     'ErrorSeverity',
+    'TrackEndReason',
 )
 
 
@@ -174,11 +175,44 @@ class ErrorSeverity(Enum):
     Represents the severity of an error received from Lavalink.
     """
 
+    if TYPE_CHECKING:
+        value: str
+
     #: This error is a common, non-fatal error. This is caused by the user input itself and not by Lavalink.
-    common = "COMMON"
+    common = 'COMMON'
 
     #: This error's cause may not be known and is usually caused by outside factors, e.g. a response in an unexpected format.
-    suspicious = "SUSPICIOUS"
+    suspicious = 'SUSPICIOUS'
 
     #: This error was caused by an issue with Lavalink.
-    fault = "FAULT"
+    fault = 'FAULT'
+
+
+class TrackEndReason(Enum):
+    """|enum|
+
+    Represents why a track has ended.
+    """
+
+    if TYPE_CHECKING:
+        value: str
+
+    #: The track has finished playing, or an exception was raised during playback.
+    finished = 'FINISHED'
+
+    #: The track failed to start, throwing an exception before providing audio.
+    load_failed = 'LOAD_FAILED'
+
+    #: The track was stopped by the user.
+    stopped = 'STOPPED'
+
+    #: The track was replaced by another track. See the ``replace`` parameter in :meth:`.Player.play` for more information.
+    replaced = 'REPLACED'
+
+    #: The track was stopped because the cleanup threshold for the player was reached.
+    cleanup = 'CLEANUP'
+
+    @property
+    def may_start_next(self) -> bool:
+        """bool: Whether it is safe to start playing another track."""
+        return self is TrackEndReason.finished or self is TrackEndReason.load_failed

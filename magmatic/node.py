@@ -11,6 +11,7 @@ from typing import (
     ClassVar,
     Dict,
     Generic,
+    Iterable,
     List,
     Literal,
     Optional,
@@ -36,7 +37,15 @@ from .errors import (
     HandshakeFailure,
     LoadFailed,
     NoMatches,
+    NotFound,
     PlayerNotFound,
+)
+from .events import (
+    TrackStartEvent,
+    TrackEndEvent,
+    TrackExceptionEvent,
+    TrackStuckEvent,
+    WebSocketCloseEvent,
 )
 from .player import Player
 from .track import Playlist, Track
@@ -52,6 +61,7 @@ if TYPE_CHECKING:
 
 ClientT = TypeVar('ClientT', bound=discord.Client)
 JsonT = TypeVar('JsonT', bound=Union[Dict[str, Any], List[Any], Any])
+_None = cast(Any, None)
 
 __all__ = (
     'Node',
@@ -226,6 +236,8 @@ class ConnectionManager:
         if self._ws_resume_key is not None:
             await self.send_resume()
 
+        self.node.bot.dispatch('magmatic_node_ready', self.node)
+
     async def disconnect(self, *, reconnect: bool = True) -> None:
         """Disconnects the current connection from Lavalink."""
         self._keep_alive = reconnect
@@ -269,15 +281,38 @@ class ConnectionManager:
             player._update_state(state)
 
         elif op is OpCode.event:
-            event = EventType(data['event'])
+            event_type = EventType(data['type'])
 
-            if event is EventType.track_end:
+            if event_type is EventType.track_start:
+                event = TrackStartEvent(player, track_id=data['track'])
+
+            elif event_type is EventType.track_end:
+                event = TrackEndEvent(player, track_id=data['track'], reason=data['reason'])
                 player._track = None
 
-            elif event is EventType.websocket_closed:
-                await self.connect(reconnect=self._keep_alive)
+            elif event_type is EventType.track_stuck:
+                event = TrackStuckEvent(player, track_id=data['track'], threshold_ms=data['thresholdMs'])
 
-            # TODO: events
+            elif event_type is EventType.track_exception:
+                event = TrackExceptionEvent(player, track_id=data['track'], exception=data['exception'])
+
+            elif event_type is EventType.websocket_closed:
+                log.info(f'[Node {self.node.identifier!r}]: Discord websocket closed for player {player.guild.id}')
+
+                await player.reconnect()
+                event = WebSocketCloseEvent(
+                    player, code=data['code'], reason=data['reason'], by_remote=data.get('byRemote', False),
+                )
+            else:
+                return
+
+            self._dispatch_player_event(event.event_name, player=player, event=event)
+
+    def _dispatch_player_event(self, name: str, *, player: Player, event: Any) -> None:
+        self.node.bot.dispatch(f'magmatic_{name}', player, event)
+
+        if method := getattr(player, 'on_' + name, False):
+            self.loop.create_task(self.node.bot._run_event(method, name, event))
 
     async def listen(self) -> None:
         if self._ws is None:
@@ -414,7 +449,14 @@ class ConnectionManager:
             'timeout': 60,
         })
 
-    async def request(self, method: RequestMethod, endpoint: str, **params: Any) -> Dict[str, Any]:
+    async def request(
+        self,
+        method: RequestMethod,
+        endpoint: str,
+        *,
+        data: Optional[Dict[str, Any]] = None,
+        **params: Any,
+    ) -> Any:
         """|coro|
 
         Sends a request to an endpoint on Lavalink's REST API.
@@ -425,6 +467,8 @@ class ConnectionManager:
             The HTTP request method to use, e.g. ``'GET'``.
         endpoint: str
             The endpoint to send the request to.
+        data: dict[:class:`str`, Any]
+            The JSON data to send with the request.
         **params: Any
             The URL query parameters to send with the request.
 
@@ -439,12 +483,17 @@ class ConnectionManager:
             An HTTP error occurred while sending the request.
         """
         backoff = ExponentialBackoff()
+        headers = {'Authorization': self._password}
+
         kwargs = {
             'method': method,
             'url': f'{self.http_url}/{endpoint}',
-            'headers': {'Authorization': self._password},
+            'headers': headers,
             'params': params,
         }
+        if data is not None:
+            headers['Content-Type'] = 'application/json'
+            kwargs['data'] = self._serializer.dumps(data)
 
         for i in range(self.REQUEST_MAX_TRIES):
             async with self.session.request(**kwargs) as response:
@@ -452,15 +501,16 @@ class ConnectionManager:
                     if i + 1 < self.REQUEST_MAX_TRIES:
                         delay = backoff.delay()
                         await asyncio.sleep(delay)
+                        continue
 
-                    continue
+                    if response.status == 404:
+                        raise NotFound(response)
+
+                    raise HTTPException(response)
 
                 return await response.json(loads=self._serializer.loads)
 
-        try:
-            raise HTTPException(response)  # type: ignore
-        except NameError:
-            raise RuntimeError(f'{self.__class__.__name__}.REQUEST_MAX_TRIES must be at least 1')
+        raise RuntimeError(f'{self.__class__.__name__}.REQUEST_MAX_TRIES must be at least 1')
 
 
 class Node(Generic[ClientT]):
@@ -728,7 +778,14 @@ class Node(Generic[ClientT]):
         await self.disconnect()
         self._cleanup()
 
-    async def request(self, method: RequestMethod, endpoint: str, **params: Any) -> Dict[str, Any]:
+    async def request(
+        self,
+        method: RequestMethod,
+        endpoint: str,
+        *,
+        data: Optional[Dict[str, Any]] = None,
+        **params: Any,
+    ) -> Any:
         """|coro|
 
         Sends a request to an endpoint on Lavalink's REST API.
@@ -739,6 +796,8 @@ class Node(Generic[ClientT]):
             The HTTP request method to use, e.g. ``'GET'``.
         endpoint: str
             The endpoint to send the request to.
+        data: :class:`dict`[:class:`str`, Any]
+            JSON data to send with the request.
         **params: Any
             The URL query parameters to send with the request.
 
@@ -752,7 +811,7 @@ class Node(Generic[ClientT]):
         HTTPException
             An HTTP error occurred while sending the request.
         """
-        return await self.connection.request(method, endpoint, **params)
+        return await self.connection.request(method, endpoint, data=data, **params)
 
     async def _load_tracks(
         self,
@@ -825,7 +884,7 @@ class Node(Generic[ClientT]):
         strict: bool = False,
         flatten_playlists: bool = False,
         limit: Optional[int] = None,
-        metadata: MetadataT = cast(Any, None),
+        metadata: MetadataT = _None,
     ) -> Union[List[Track[MetadataT]], Playlist[MetadataT]]:
         """|coro|
 
@@ -861,7 +920,7 @@ class Node(Generic[ClientT]):
             The metadata to associate with the tracks and/or playlist.
             Metadata associated with playlists will be passed down to their child tracks.
 
-            Could be useful for associating a requester with the playlist.
+            Could be useful for associating a requester with the tracks or playlist.
             This is optional and defaults to ``None``.
 
         Returns
@@ -930,7 +989,7 @@ class Node(Generic[ClientT]):
         strict: bool = False,
         resolve_playlists: bool = False,
         prefer_selected_track: bool = True,
-        metadata: MetadataT = cast(Any, None),
+        metadata: MetadataT = _None,
     ) -> Union[Playlist[MetadataT], Track[MetadataT], None]:
         """|coro|
 
@@ -970,7 +1029,7 @@ class Node(Generic[ClientT]):
             The metadata to associate with the tracks and/or playlist.
             Metadata associated with playlists will be passed down to their child tracks.
 
-            Could be useful for associating a requester with the playlist.
+            Could be useful for associating a requester with the track or playlist.
             This is optional and defaults to ``None``.
 
         Returns
@@ -1005,6 +1064,84 @@ class Node(Generic[ClientT]):
             return result.selected_track or result.first
 
         return result
+
+    async def fetch_track(self, id: str, *, metadata: MetadataT = _None) -> Track[MetadataT]:
+        """|coro|
+
+        Fetches and resolves a track given its track ID.
+
+        Parameters
+        ----------
+        id: str
+            The base 64 ID of the track to fetch.
+        metadata
+            The metadata to associate with the fetched track.
+
+            Could be useful for associating a requester with the track.
+            This is optional and defaults to ``None``.
+
+        Returns
+        -------
+        :class:`.Track`
+            The track that was fetched.
+
+        Raises
+        ------
+        NotFound
+            The track was not found.
+        """
+        response = await self.request('GET', 'decodetrack', track=id)
+        return Track(id=id, data=response, metadata=metadata)
+
+    async def fetch_tracks(
+        self,
+        ids: Iterable[str],
+        *,
+        atomic: bool = False,
+        metadata: MetadataT = _None,
+    ) -> List[Track[MetadataT]]:
+        """|coro|
+
+        Fetches and resolves multiple tracks given their IDs.
+
+        Parameters
+        ----------
+        ids: Iterable[:class:`str`]
+            An iterable (i.e. :py:class:`list`) of strings, each string being a base 64 ID
+            which represents a track to be fetched.
+        atomic: bool
+            Whether to fetch each track individually. Defaults to ``False``.
+            This can ensure that if any track fails, other tracks will still be resolved.
+        metadata
+            The metadata to associate with the fetched tracks.
+
+            Could be useful for associating a requester with the tracks.
+            This is optional and defaults to ``None``.
+
+        Returns
+        -------
+        list[:class:`.Track`]
+            The tracks that were fetched.
+
+        Raises
+        ------
+        NotFound
+            One or more of the tracks were not found.
+            This error will pass silently if ``atomic`` is ``True``.
+        """
+        if atomic:
+            result = []
+
+            for id in ids:
+                try:
+                    result.append(await self.fetch_track(id, metadata=metadata))
+                except NotFound:
+                    pass
+
+            return result
+
+        response: List[Dict[str, Any]] = await self.request('POST', 'decodetracks', data={'tracks': list(ids)})
+        return [Track(id=id, data=data, metadata=metadata) for id, data in zip(ids, response)]
 
     def __repr__(self) -> str:
         return f'<Node {self.identifier!r}>'

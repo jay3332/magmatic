@@ -16,6 +16,13 @@ if TYPE_CHECKING:
     from discord.channel import VocalGuildChannel
     from discord.types.voice import GuildVoiceState, VoiceServerUpdate
 
+    from .events import (
+        TrackStartEvent,
+        TrackEndEvent,
+        TrackExceptionEvent,
+        TrackStuckEvent,
+        WebSocketCloseEvent,
+    )
     from .node import Node
     from .track import Track
 
@@ -56,6 +63,22 @@ class Player(VoiceProtocol, Generic[ClientT]):
     client: ClientT
     channel: VocalGuildChannel
 
+    if TYPE_CHECKING:
+        async def on_track_start(self, event: TrackStartEvent) -> None:
+            ...
+
+        async def on_track_end(self, event: TrackEndEvent) -> None:
+            ...
+
+        async def on_track_exception(self, event: TrackExceptionEvent) -> None:
+            ...
+
+        async def on_track_stuck(self, event: TrackStuckEvent) -> None:
+            ...
+
+        async def on_websocket_close(self, event: WebSocketCloseEvent) -> None:
+            ...
+
     def __init__(
         self,
         client: ClientT = MISSING,
@@ -92,6 +115,14 @@ class Player(VoiceProtocol, Generic[ClientT]):
         self._voice_server_data: Dict[str, Any] = {}
 
         super().__init__(client, channel)
+
+        self._has_voice_states_intent: bool = self.bot.intents.voice_states
+
+        # These should be set automatically, but only if Intents.voice_states is enabled
+        if not self._has_voice_states_intent:
+            self._muted: bool = False
+            self._deafened: bool = False
+            self._connected: bool = False
 
     def _upgrade_guild(self) -> None:
         if isinstance(self.guild, discord.Guild):
@@ -194,28 +225,29 @@ class Player(VoiceProtocol, Generic[ClientT]):
 
     def is_connected(self) -> bool:
         """:class:`bool`: Returns whether the player is connected to a voice channel."""
-        return (
-            self.channel is not None
-            and isinstance(self.guild, discord.Guild)
-        )
+        if self.channel is not None:
+            return False
+
+        if self._has_voice_states_intent:
+            return (
+                isinstance(self.guild, discord.Guild)
+                and self.voice is not None
+                and self.voice.channel is not None
+            )
+
+        return self._connected
 
     def is_playing(self) -> bool:
         """:class:`bool`: Returns whether the player is currently playing a track."""
         return self.is_connected() and self._track is not None
 
     def is_self_muted(self) -> bool:
-        """:class:`bool`: Returns whether the player's voice state is self-muted.
-
-        If :attr:`discord.Intents.voice_states` is not enabled, this will always return ``False``.
-        """
-        return self.voice is not None and self.voice.self_mute
+        """:class:`bool`: Returns whether the player's voice state is self-muted."""
+        return self.voice is not None and self.voice.self_mute if self._has_voice_states_intent else self._muted
 
     def is_self_deafened(self) -> bool:
-        """:class:`bool`: Returns whether the player's voice state is self-deafened.
-
-        If :attr:`discord.Intents.voice_states` is not enabled, this will always return ``False``.
-        """
-        return self.voice is not None and self.voice.self_deaf
+        """:class:`bool`: Returns whether the player's voice state is self-deafened."""
+        return self.voice is not None and self.voice.self_deaf if self._has_voice_states_intent else self._deafened
 
     def is_paused(self) -> bool:
         """:class:`bool`: Returns whether the player is paused."""
@@ -324,6 +356,22 @@ class Player(VoiceProtocol, Generic[ClientT]):
         log.debug(f'[Node {self.node.identifier!r}] Connecting to voice channel with ID {self.channel_id!r}')
         await self.guild.change_voice_state(channel=self.channel, self_deaf=self_deaf, self_mute=self_mute)
 
+        if not self._has_voice_states_intent:
+            self._connected = True
+
+    async def reconnect(self) -> None:
+        """|coro|
+
+        Disconnects and reconnects to the voice channel associated with this player.
+
+        This method takes no arguments as all this should do is reconnect the player to its
+        original state.
+        """
+        log.debug(f'[Node {self.node.identifier!r}] Reconnecting to voice channel with ID {self.channel_id!r}')
+
+        await self.disconnect(force=True, destroy=False)
+        await self.connect(self.channel, self_deaf=self.is_self_deafened(), self_mute=self.is_self_muted())
+
     async def disconnect(self, *, force: bool = False, destroy: bool = True) -> None:
         """|coro|
 
@@ -355,6 +403,9 @@ class Player(VoiceProtocol, Generic[ClientT]):
 
             log.debug(f'[Node {self.node.identifier!r}] Disconnecting from voice channel with ID {self.channel_id!r}')
             await self.guild.change_voice_state(channel=None)
+
+            if not self._has_voice_states_intent:
+                self._connected = False
         finally:
             if destroy:
                 await self.destroy(disconnect=False)
@@ -456,8 +507,15 @@ class Player(VoiceProtocol, Generic[ClientT]):
             pause=pause,
         )
 
-        self._track = track
         log.debug(f'[Node {self.node.identifier!r}] Playing track {track!r} in guild ID {self.guild_id}')
+
+        # This should not be handled manually; it is more reliable to listen for track_end followed by track_start.
+        # However, the way this is designed right now will cause track metadata to be lost, and we don't want that.
+        # In the future, we can possibly cache tracks by their ID which will resolve this issue
+        if not replace and self.is_playing():
+            return
+
+        self._track = track
 
     async def seek(self, position: float) -> None:
         """|coro|
@@ -543,6 +601,9 @@ class Player(VoiceProtocol, Generic[ClientT]):
             self_mute=self.is_self_muted(),
         )
 
+        if not self._has_voice_states_intent:
+            self._deafened = deafen
+
     async def set_mute(self, mute: bool) -> None:
         """|coro|
 
@@ -565,6 +626,9 @@ class Player(VoiceProtocol, Generic[ClientT]):
             self_deaf=self.is_self_deafened(),
             self_mute=mute,
         )
+
+        if not self._has_voice_states_intent:
+            self._muted = mute
 
     async def set_pause(self, pause: bool) -> None:
         """|coro|

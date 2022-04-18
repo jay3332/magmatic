@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 __all__ = (
     'MagmaticException',
     'HTTPException',
+    'NotFound',
     'ConnectionFailure',
     'HandshakeFailure',
     'AuthorizationFailure',
@@ -52,6 +53,17 @@ class HTTPException(MagmaticException):
     def status(self) -> int:
         """:class:`int`: The HTTP status code of the response."""
         return self.response.status
+
+
+class NotFound(HTTPException):
+    # noinspection PyUnresolvedReferences
+    """Raised when the requested resource is not found.
+
+    Attributes
+    ----------
+    response: :class:`aiohttp.ClientResponse`
+        The aiohttp response object received from Lavalink.
+    """
 
 
 class ConnectionFailure(MagmaticException):
