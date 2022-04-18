@@ -223,7 +223,8 @@ class ConnectionManager:
             log.error(f'[Node {self.node.identifier!r}]: Immediately disconnected from Lavalink')
             return
 
-        await self.send_resume()
+        if self._ws_resume_key is not None:
+            await self.send_resume()
 
     async def disconnect(self, *, reconnect: bool = True) -> None:
         """Disconnects the current connection from Lavalink."""
