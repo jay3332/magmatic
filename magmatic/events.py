@@ -75,7 +75,7 @@ class TrackAwareEvent(BaseEvent):
         Resolves the track ID into a :class:`.Track` object.
 
         This will make a request to Lavalink to decode the track ID associated with this event.
-        See :meth:`Node.decode_track` for more information.
+        See :meth:`Node.fetch_track` for more information.
 
         Parameters
         ----------
