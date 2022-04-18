@@ -134,6 +134,7 @@ class Player(VoiceProtocol, Generic[ClientT]):
         """Optional[:class:`discord.VoiceState`]: The voice state associated with this player.
 
         This is ``None`` if the player is not connected to a voice channel.
+        This is also ``None`` if :attr:`discord.Intents.voice_states` is not enabled.
         """
         if not self.is_connected():
             return None
@@ -196,8 +197,6 @@ class Player(VoiceProtocol, Generic[ClientT]):
         return (
             self.channel is not None
             and isinstance(self.guild, discord.Guild)
-            and self.guild.me.voice is not None
-            and self.guild.me.voice.channel is not None
         )
 
     def is_playing(self) -> bool:
@@ -205,11 +204,17 @@ class Player(VoiceProtocol, Generic[ClientT]):
         return self.is_connected() and self._track is not None
 
     def is_self_muted(self) -> bool:
-        """:class:`bool`: Returns whether the player's voice state is self-muted."""
+        """:class:`bool`: Returns whether the player's voice state is self-muted.
+
+        If :attr:`discord.Intents.voice_states` is not enabled, this will always return ``False``.
+        """
         return self.voice is not None and self.voice.self_mute
 
     def is_self_deafened(self) -> bool:
-        """:class:`bool`: Returns whether the player's voice state is self-deafened."""
+        """:class:`bool`: Returns whether the player's voice state is self-deafened.
+
+        If :attr:`discord.Intents.voice_states` is not enabled, this will always return ``False``.
+        """
         return self.voice is not None and self.voice.self_deaf
 
     def is_paused(self) -> bool:
