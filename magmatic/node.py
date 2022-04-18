@@ -327,7 +327,7 @@ class ConnectionManager:
     async def send_voice_server_update(self, *, guild_id: int, session_id: int, event: Dict[str, Any]) -> None:
         await self.send({
             'op': 'voiceUpdate',
-            'guildId': guild_id,
+            'guildId': str(guild_id),
             'sessionId': session_id,
             'event': event,
         })
@@ -345,7 +345,7 @@ class ConnectionManager:
     ) -> None:
         data = {
             'op': 'play',
-            'guildId': guild_id,
+            'guildId': str(guild_id),
             'track': track,
             'startTime': start_time,
             'noReplace': no_replace,
@@ -363,40 +363,40 @@ class ConnectionManager:
     async def send_stop(self, *, guild_id: int) -> None:
         await self.send({
             'op': 'stop',
-            'guildId': guild_id,
+            'guildId': str(guild_id),
         })
 
     async def send_pause(self, *, guild_id: int, pause: bool = True) -> None:
         await self.send({
             'op': 'pause',
-            'guildId': guild_id,
+            'guildId': str(guild_id),
             'pause': pause,
         })
 
     async def send_seek(self, *, guild_id: int, position: int) -> None:
         await self.send({
             'op': 'seek',
-            'guildId': guild_id,
+            'guildId': str(guild_id),
             'position': position,
         })
 
     async def send_volume(self, *, guild_id: int, volume: int) -> None:
         await self.send({
             'op': 'volume',
-            'guildId': guild_id,
+            'guildId': str(guild_id),
             'volume': volume,
         })
 
     async def send_destroy(self, *, guild_id: int) -> None:
         await self.send({
             'op': 'destroy',
-            'guildId': guild_id,
+            'guildId': str(guild_id),
         })
 
     async def send_filters(self, *, guild_id: int, filters: Dict[str, Any]) -> None:
         await self.send({
             'op': 'filters',
-            'guildId': guild_id,
+            'guildId': str(guild_id),
             **filters,
         })
 
