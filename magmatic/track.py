@@ -35,8 +35,8 @@ class Track(Generic[MetadataT]):
     id: :class:`int`
         The base 64 ID of the track.
 
-        You can use this to rebuild this track object; see :meth:`.Node.decode_track`
-        for information on how.
+        You can use this to rebuild this track object; see :meth:`.Node.fetch_track`
+        or :meth:`.Node.fetch_tracks` for information on how.
     title: :class:`str`
         The title of the track.
     author: Optional[:class:`str`]
