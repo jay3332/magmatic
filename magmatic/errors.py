@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 from discord.abc import Snowflake
 
@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from .node import Node
     from .player import Player
     from .pool import NodePool
+    from .queue import BaseQueue
+    from .track import Track
 
 __all__ = (
     'MagmaticException',
@@ -256,3 +258,24 @@ class NotConnected(MagmaticException):
         self.player: Player = player
 
         super().__init__(f'Player {player!r} (on node {player.node.identifier!r}) is not connected')
+
+
+class QueueFull(MagmaticException):
+    """Raised when a :class:`.BaseQueue` is full and cannot accept more items.
+    In other words, it has reached its :attr:`~.BaseQueue.max_size`.
+
+    Attributes
+    ----------
+    queue: :class:`.BaseQueue`
+        The queue that is full.
+    track: :class:`.Track`
+        The track that was attempted to be added to the queue.
+    """
+
+    __slots__ = ('queue', 'track')
+
+    def __init__(self, queue: BaseQueue, track: Track) -> None:
+        self.queue: BaseQueue = queue
+        self.track: Track[Any] = track
+
+        super().__init__(f'Queue reached max_size of {queue.max_size}')

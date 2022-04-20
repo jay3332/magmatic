@@ -16,6 +16,7 @@ MetadataCT_co = TypeVar('MetadataCT_co', bound=Type[Any], covariant=True)
 
 __all__ = (
     'Track',
+    'LocalTrack',
     'YoutubeTrack',
     'YoutubeMusicTrack',
     'SoundCloudTrack',
@@ -141,6 +142,9 @@ class Track(Generic[MetadataT]):
 
     def __repr__(self) -> str:
         return f'<Track id={self.id!r} title={self.title!r} uri={self.uri!r}>'
+
+    def __eq__(self, other: Any) -> bool:
+        return self.id == other.id if isinstance(other, self.__class__) else False
 
 
 class _MetadataAwareTrackConverter(Converter[Track[MetadataCT_co]], Generic[MetadataCT_co]):
