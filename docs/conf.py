@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.abspath('.'))
 sys.path.insert(0, os.path.abspath('..'))
 
 for attr in magmatic_enums.__all__:
-    document_enum(getattr(magmatic_enums, attr))
+    setattr(magmatic_enums, attr, document_enum(getattr(magmatic_enums, attr)))
 
 # -- Project information -----------------------------------------------------
 
