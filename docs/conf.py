@@ -13,12 +13,16 @@
 import os
 import sys
 
+from enum_tools.documentation import document_enum
+
 from magmatic import __author__, __version__
+import magmatic.enums as magmatic_enums
 
 sys.path.insert(0, os.path.abspath('.'))
 sys.path.insert(0, os.path.abspath('..'))
 
-
+for attr in magmatic_enums.__all__:
+    document_enum(getattr(magmatic_enums, attr))
 
 # -- Project information -----------------------------------------------------
 

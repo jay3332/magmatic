@@ -292,43 +292,36 @@ Source
 
 .. autoenum:: Source()
     :members:
-    :undoc-members:
 
 LoadSource
 ~~~~~~~~~~
 
 .. autoenum:: LoadSource()
     :members:
-    :undoc-members:
 
 LoadType
 ~~~~~~~~
 
 .. autoenum:: LoadType()
     :members:
-    :undoc-members:
 
 ErrorSeverity
 ~~~~~~~~~~~~~
 
 .. autoenum:: ErrorSeverity()
     :members:
-    :undoc-members:
 
 TrackEndReason
 ~~~~~~~~~~~~~~
 
 .. autoenum:: TrackEndReason()
     :members:
-    :undoc-members:
 
 Internal Enums
 ~~~~~~~~~~~~~~
 
 .. autoenum:: OpCode()
     :members:
-    :undoc-members:
 
 .. autoenum:: EventType()
     :members:
-    :undoc-members:
