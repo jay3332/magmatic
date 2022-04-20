@@ -134,35 +134,35 @@ See :ref:`Event Reference` for more information on events.
 TrackStartEvent
 ~~~~~~~~~~~~~~~
 
-.. autoclass:: TrackStartEvent
+.. autoclass:: TrackStartEvent()
     :members:
     :inherited-members:
 
 TrackEndEvent
 ~~~~~~~~~~~~~~
 
-.. autoclass:: TrackEndEvent
+.. autoclass:: TrackEndEvent()
     :members:
     :inherited-members:
 
 TrackExceptionEvent
 ~~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: TrackExceptionEvent
+.. autoclass:: TrackExceptionEvent()
     :members:
     :inherited-members:
 
 TrackStuckEvent
 ~~~~~~~~~~~~~~~
 
-.. autoclass:: TrackStuckEvent
+.. autoclass:: TrackStuckEvent()
     :members:
     :inherited-members:
 
 WebSocketCloseEvent
 ~~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: WebSocketCloseEvent
+.. autoclass:: WebSocketCloseEvent()
     :members:
     :inherited-members:
 
@@ -292,36 +292,43 @@ Source
 
 .. autoenum:: Source()
     :members:
+    :undoc-members:
 
 LoadSource
 ~~~~~~~~~~
 
 .. autoenum:: LoadSource()
     :members:
+    :undoc-members:
 
 LoadType
 ~~~~~~~~
 
 .. autoenum:: LoadType()
     :members:
+    :undoc-members:
 
 ErrorSeverity
 ~~~~~~~~~~~~~
 
 .. autoenum:: ErrorSeverity()
     :members:
+    :undoc-members:
 
 TrackEndReason
 ~~~~~~~~~~~~~~
 
 .. autoenum:: TrackEndReason()
     :members:
+    :undoc-members:
 
 Internal Enums
 ~~~~~~~~~~~~~~
 
 .. autoenum:: OpCode()
     :members:
+    :undoc-members:
 
 .. autoenum:: EventType()
     :members:
+    :undoc-members:
