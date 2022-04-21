@@ -1,4 +1,6 @@
 import re
+from warnings import warn
+
 from setuptools import setup
 
 
@@ -19,33 +21,36 @@ with open('magmatic/__init__.py', encoding='utf-8') as fp:
         data = match.groupdict()
         extra[data['name']] = data['value']
 
-if extra.get('version', '').endswith(('a', 'b', 'rc')):
+try:
+    version = extra['version']
+except KeyError:
+    raise RuntimeError('Unable to determine version number')
+
+if version.endswith(('a', 'b', 'rc')):
     try:
         import subprocess
 
         proc = subprocess.Popen(
             ['git', 'rev-list', '--count', 'HEAD'], 
             stdout=subprocess.PIPE, 
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
         )
-
         stdout, _ = proc.communicate()
 
         if stdout:
             extra['version'] += stdout.decode('utf-8').strip()
-        
+
         proc = subprocess.Popen(
             ['git', 'rev-parse', '--short', 'HEAD'],
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
         )
-
         stdout, _ = proc.communicate()
 
         if stdout:
             extra['version'] += '+g' + stdout.decode('utf-8').strip()
-    except:
-        pass
+    except Exception as exc:
+        warn(f'Encountered error while trying to retrieve Git commit hash: {exc}')
 
 setup(
     name='magmatic',
