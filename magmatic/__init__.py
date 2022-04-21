@@ -6,6 +6,7 @@ from .filters import *
 from .node import *
 from .player import *
 from .pool import *
+from .queue import *
 from .stats import *
 from .track import *
 

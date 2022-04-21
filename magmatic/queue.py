@@ -2,18 +2,22 @@ from __future__ import annotations
 
 from abc import ABC
 from collections import deque
+from enum import IntEnum
 from typing import Callable, Generic, Iterable, Iterator, List, Optional, Protocol, TYPE_CHECKING, TypeVar, Union
 
 from .errors import QueueFull
+from .track import Playlist, Track
 
 MetadataT = TypeVar('MetadataT')
 
 if TYPE_CHECKING:
-    from typing_extensions import Self
-
-    from .track import Playlist, Track
-
     Enqueueable = Union[Track[MetadataT], Playlist[MetadataT]]
+
+    # PyCharm does not support typing[_extensions].Self
+    _IT = TypeVar('_IT', bound='_InternalQueue')
+    BaseQueueT = TypeVar('BaseQueueT', bound='BaseQueue')
+    ConsumptionQueueT = TypeVar('ConsumptionQueueT', bound='ConsumptionQueue')
+    QueueT = TypeVar('QueueT', bound='Queue')
 
     class _InternalQueue(Protocol[MetadataT]):
         def __getitem__(self, index: int, /) -> Track[MetadataT]: ...
@@ -31,10 +35,12 @@ if TYPE_CHECKING:
         def popleft(self) -> Track[MetadataT]: ...
         def remove(self, value: Track[MetadataT], /) -> None: ...
         def clear(self) -> None: ...
-        def copy(self) -> Self: ...
+        def copy(self: _IT) -> _IT: ...
 
 __all__ = (
     'BaseQueue',
+    'ConsumptionQueue',
+    'Queue',
 )
 
 
@@ -59,6 +65,19 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
         """int: The number of tracks in the queue."""
         return len(self._queue)
 
+    @property
+    def queue(self) -> _InternalQueue[MetadataT]:
+        """The internal queue this queue wraps around. Usually :py:class:`~collections.deque`."""
+        return self._queue
+
+    @property
+    def current(self) -> Optional[Track[MetadataT]]:
+        """Optional[:class:`.Track`]: The current track the queue is pointing to.
+
+        This is ``None`` if the queue is empty or if the queue is not pointing to a track.
+        """
+        raise NotImplementedError
+
     def is_empty(self) -> bool:
         """bool: Whether the queue is empty."""
         return not self
@@ -67,8 +86,11 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
         """bool: Whether the queue is full. This is always ``False`` for queues that do not have a maximum size."""
         return self.max_size is not None and self.count >= self.max_size
 
-    def _get(self) -> Track[MetadataT]:
+    def _get(self) -> Optional[Track[MetadataT]]:
         raise NotImplementedError
+
+    def _skip(self) -> Optional[Track[MetadataT]]:
+        return self._get()
 
     def _add(self, track: Track[MetadataT]) -> None:
         self._queue.append(track)
@@ -141,6 +163,25 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
         """Adds multiple tracks or playlists to the queue.
 
         This is in reality just a shortcut to calling :meth:`add` for each track or playlist in the iterable.
+
+        Parameters
+        ----------
+        items: Iterable[Union[:class:`Track`, :class:`Playlist`]]
+            An iterable (i.e. a :py:class:`list`) of tracks or playlists to add to the queue.
+        discard: bool
+            Whether to discard another track if the queue is full.
+            If this is ``False`` (the default), :exception:`QueueFull` will be raised instead.
+
+        Returns
+        -------
+        List[:class:`Track`]
+            A list of discarded tracks if ``discard`` was ``True``.
+            If ``discard`` was ``False``, this will be an empty list.
+
+        Raises
+        ------
+        QueueFull
+            If the queue is full and ``discard`` was ``False``.
         """
         # We choose to do it this way because sum is slow for this type of operation.
         discarded = []
@@ -150,7 +191,138 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
 
         return discarded
 
-    def copy(self) -> Self:
+    def extend(self, items: Iterable[Enqueueable[MetadataT]], *, discard: bool = False) -> List[Track[MetadataT]]:  # type: ignore
+        """An alias for :meth:`add_multiple`. See documentation for that instead."""
+        return self.add_multiple(items, discard=discard)
+
+    def remove_index(self, index: int = 0) -> Track[MetadataT]:
+        """Removes the track at the specified index from the queue.
+        If you have an index, this is usually preferred over :meth:`remove`.
+
+        .. note::
+            This is zero-indexed - the first track is at index ``0``.
+
+        Parameters
+        ----------
+        index: int
+            The index of the track to pop.
+
+        Returns
+        -------
+        :class:`Track`
+            The track that was popped.
+        """
+        if index < 0:
+            index += len(self)
+
+        if index < 0 or index >= len(self):
+            raise IndexError(f'index {index} out of range')
+
+        if index == 0:
+            return self._queue.popleft()
+
+        elif index - 1 == len(self):
+            return self._queue.pop()
+
+        return self.remove(index)
+
+    def remove(self, item: Union[Track[MetadataT], int]) -> Track[MetadataT]:
+        """Removes a track (or track at a given index) from the queue.
+
+        Parameters
+        ----------
+        item: Union[:class:`Track`, int]
+            The track to remove from the queue, or the index of the track to remove.
+
+        Returns
+        -------
+        :class:`Track`
+            The removed track.
+        """
+        if isinstance(item, int):
+            track = self._queue[item]
+            del self._queue[item]
+            return track
+
+        self._queue.remove(item)
+        return item
+
+    def skip(self, count: int = 1) -> Optional[Track[MetadataT]]:
+        """Skips the next track (or ``count`` number of tracks) in the queue and returns the new track.
+        In some queue implementations, this is identical to :meth:`get`.
+
+        In :class:`.Queue`, this will ignore :attr:`.LoopType.track` and move on to the next track
+        regardless.
+
+        Parameters
+        ----------
+        count: int
+            The number of tracks to skip. Defaults to ``1``.
+
+        Returns
+        -------
+        Optional[:class:`Track`]
+            The retrieved track, or ``None`` if the queue is empty.
+        """
+        if self.is_empty():
+            return None
+
+        for _ in range(count - 1):
+            self._skip()
+
+        return self._skip()
+
+    def insert(self, index: int, item: Enqueueable[MetadataT]) -> None:    # type: ignore
+        """Inserts a track or playlist into the queue at the specified index.
+
+        .. note::
+            This is zero-indexed - the first track is at index ``0``.
+
+        Parameters
+        ----------
+        index: int
+            The index at which to insert the track or playlist.
+        item: Union[:class:`Track`, :class:`Playlist`]
+            The track or playlist to insert.
+        """
+        tracks = item.tracks if isinstance(item, Playlist) else (item,)
+
+        for i, track in enumerate(tracks):
+            self._insert(index + i, track)
+
+    def jump_to(self, index: int) -> Track[MetadataT]:
+        """Jumps to the track at the given index.
+
+        .. note::
+            This is zero-indexed - the first track is at index ``0``.
+
+        Parameters
+        ----------
+        index: :class:`int`
+            The index to jump to.
+
+        Returns
+        -------
+        :class:`.Track`
+            The track at the given index.
+        """
+        raise NotImplementedError
+
+    def jump_to_last(self) -> Track[MetadataT]:
+        """Jumps to the last track in the queue.
+
+        Returns
+        -------
+        :class:`.Track`
+            The last track in the queue.
+        """
+        return self.jump_to(len(self) - 1)
+
+    def clear(self) -> None:
+        """Removes all tracks from the queue."""
+        self._queue.clear()
+
+    def copy(self: BaseQueueT) -> BaseQueueT:
         """Creates and returns a copy of the queue."""
         raise NotImplementedError
 
@@ -159,6 +331,9 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
 
     def __bool__(self) -> bool:
         return bool(self.count)
+
+    def __copy__(self: BaseQueueT) -> BaseQueueT:
+        return self.copy()
 
     def __len__(self) -> int:
         return self.count
@@ -191,12 +366,14 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
         return reversed(self._queue)
 
 
-class ConsumptionQueue(BaseQueue[MetadataT]):
+class ConsumptionQueue(BaseQueue[MetadataT], Generic[MetadataT]):
     """A queue that gets rid of tracks as they are retrieved.
+
+    For a more common use case of a queue where tracks are kept, see :class:`.Queue`.
 
     Attributes
     ----------
-    max_size: Optional[:clas:`int`]
+    max_size: Optional[:class:`int`]
         The maximum amount of tracks this queue can hold. ``None`` if no
         limit was set.
 
@@ -210,6 +387,8 @@ class ConsumptionQueue(BaseQueue[MetadataT]):
         Defaults to the built-in :class:`collections.deque` itself.
     """
 
+    __slots__ = ('max_size', '_queue')
+
     def __init__(
         self,
         *,
@@ -219,11 +398,146 @@ class ConsumptionQueue(BaseQueue[MetadataT]):
         self.max_size: Optional[int] = max_size
         self._queue: _InternalQueue[MetadataT] = factory()
 
+    @property
+    def current(self) -> Optional[Track[MetadataT]]:
+        return None if self.is_empty() else self._queue[0]
+
     def _get(self) -> Track[MetadataT]:
         return self._queue.popleft()
 
-    def copy(self) -> Self:
+    def copy(self: ConsumptionQueueT) -> ConsumptionQueueT:
         new = self.__class__(max_size=self.max_size)
-        # noinspection PyNoneFunctionAssignment
+        new._queue = self._queue.copy()
+        return new
+
+    def jump_to(self, index: int) -> Track[MetadataT]:
+        if result := self.skip(index):
+            return result
+
+        raise IndexError(f'index {index} out of range')
+
+
+class LoopType(IntEnum):
+    """|enum|
+
+    The track looping type of a :class:`.Queue`.
+    """
+
+    #: The queue will not loop anything.
+    none = 0
+
+    #: The queue will loop its current track.
+    track = 1
+
+    #: The queue will loop through itself.
+    queue = 2
+
+
+class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
+    """A queue that keeps its tracks, moving a pointer to each track which is retrieved.
+
+    Because this is the most common use case for queues, this is just named "Queue".
+    For a queue that consumes tracks as they are retrieved, see :class:`.ConsumptionQueue`.
+
+    Attributes
+    ----------
+    max_size: Optional[:clas:`int`]
+        The maximum amount of tracks this queue can hold. ``None`` if no
+        limit was set.
+    loop_type: :class:`.LoopType`
+        The looping policy this queue is using.
+
+    Parameters
+    ----------
+    max_size: Optional[:class:`int`]
+        The maximum amount of tracks this queue should hold.
+        Leave blank to allow an infinite amount of tracks.
+    loop_type: :class:`.LoopType`
+        The loop type to use. Defaults to :attr:`~.LoopType.none`.
+    factory: () -> :py:class:`~collections.deque`
+        The factory function or class to use to create the internal queue.
+        Defaults to the built-in :class:`collections.deque` itself.
+    """
+
+    __slots__ = ('max_size', 'loop_type', '_queue', '_index')
+
+    def __init__(
+        self,
+        *,
+        max_size: Optional[int] = None,
+        loop_type: LoopType = LoopType.none,
+        factory: Callable[[], _InternalQueue[MetadataT]] = deque,
+    ) -> None:
+        self.max_size: Optional[int] = max_size
+        self.loop_type: LoopType = loop_type
+
+        self._queue: _InternalQueue[MetadataT] = factory()
+        self._index: int = -1
+
+    @property
+    def current(self) -> Optional[Track[MetadataT]]:
+        try:
+            return None if self._index < 0 else self._queue[self._index]
+        except IndexError:
+            return None
+
+    @property
+    def current_index(self) -> Optional[int]:
+        """Optional[:class:`int`]: The index of the current track the queue is pointing to.
+        This could be an index out of bounds if the queue has exhausted all tracks.
+
+        This is ``None`` if the queue is not pointing to a track.
+        """
+        return None if self._index < 0 else self._index
+
+    @current_index.setter
+    def current_index(self, value: Optional[int]) -> None:
+        if value is None:
+            self._index = -1
+            return
+
+        self.jump_to(value)
+
+    def _get(self) -> Optional[Track[MetadataT]]:
+        return self.current if self.loop_type is LoopType.track else self._skip()
+
+    def _skip(self) -> Optional[Track[MetadataT]]:
+        self._index += 1
+
+        if self.current is None and self.loop_type is LoopType.queue:
+            self._index = 0
+
+        return self.current
+
+    def jump_to(self, index: int) -> Track[MetadataT]:
+        if not isinstance(index, int):
+            raise TypeError("index must be an int")
+
+        self._index = index
+        if not self.current:
+            raise IndexError(f'no track exists at index {index}')
+
+        return self.current
+
+    def reset(self, *, hard: bool = False) -> None:
+        """Resets the queue pointer.
+
+        Parameters
+        ----------
+        hard: :class:`bool`
+            Whether :meth:`get` should be called to retrieve the first track again.
+            If ``False`` the queue will just reset to the first track.
+
+            Defaults to ``False``.
+        """
+        self._index = -hard
+
+    def clear(self) -> None:
+        super().clear()
+        self.reset(hard=True)
+
+    def copy(self: QueueT) -> QueueT:
+        new = self.__class__(max_size=self.max_size, loop_type=self.loop_type)
+        new.current_index = self._index
         new._queue = self._queue.copy()
         return new

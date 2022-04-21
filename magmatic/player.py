@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, Generic, Optional, TYPE_CHECKING, Type, TypeVar, Union
+from typing import Any, Awaitable, Callable, Dict, Generic, Optional, TYPE_CHECKING, Type, TypeVar, Union
 
 import discord
 from discord import VoiceProtocol
@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from discord.types.voice import GuildVoiceState, VoiceServerUpdate
 
     from .events import (
+        BaseEvent,
         TrackStartEvent,
         TrackEndEvent,
         TrackExceptionEvent,
@@ -781,6 +782,19 @@ class Player(VoiceProtocol, Generic[ClientT]):
         """
         self.filters.clear()
         await self.apply_filters()
+
+    def event(self, coro: Callable[[BaseEvent], Awaitable[Any]], /) -> Callable[[BaseEvent], Awaitable[Any]]:
+        """A decorator that registers a coroutine function as an event handler for the given event.
+
+        Parameters
+        ----------
+        coro: async (event: :class:`.BaseEvent`) -> Any
+            The coroutine function to register.
+        """
+        setattr(self, coro.__name__, coro)
+        log.debug('Registered event %r', coro.__name__)
+
+        return coro
 
     def __repr__(self) -> str:
         return f'<Player node={self.node.identifier!r} guild_id={self.guild_id} channel_id={self.channel_id}>'
