@@ -7,6 +7,7 @@ from enum import IntEnum
 from functools import wraps
 from typing import (
     Any,
+    AsyncIterator,
     Callable,
     Generic,
     Iterable,
@@ -728,6 +729,13 @@ def _waiter_cls(base: Type[BaseQueue[MetadataT]]) -> Type[BaseQueue[MetadataT]]:
             copy._fut = self._fut  # type: ignore
             copy._loop = self._loop  # type: ignore
             return copy
+
+        async def __aiter__(self) -> AsyncIterator[Track[MetadataT]]:
+            while True:
+                try:
+                    yield await self.get_wait()
+                except asyncio.CancelledError:
+                    break
 
     return Wrapped
 
