@@ -1,9 +1,24 @@
 from __future__ import annotations
 
+import asyncio
 from abc import ABC
 from collections import deque
 from enum import IntEnum
-from typing import Callable, Generic, Iterable, Iterator, List, Optional, Protocol, TYPE_CHECKING, TypeVar, Union
+from functools import wraps
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Protocol,
+    TYPE_CHECKING,
+    Type,
+    TypeVar,
+    Union,
+)
 
 from .errors import QueueFull
 from .track import Playlist, Track
@@ -11,7 +26,12 @@ from .track import Playlist, Track
 MetadataT = TypeVar('MetadataT')
 
 if TYPE_CHECKING:
+    from typing_extensions import ParamSpec
+
     Enqueueable = Union[Track[MetadataT], Playlist[MetadataT]]
+
+    P = ParamSpec('P')
+    R = TypeVar('R')
 
     # PyCharm does not support typing[_extensions].Self
     _IT = TypeVar('_IT', bound='_InternalQueue')
@@ -41,6 +61,8 @@ __all__ = (
     'BaseQueue',
     'ConsumptionQueue',
     'Queue',
+    'WaitableConsumptionQueue',
+    'WaitableQueue',
 )
 
 
@@ -76,6 +98,18 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
 
         This is ``None`` if the queue is empty or if the queue is not pointing to a track.
         """
+        raise NotImplementedError
+
+    @property
+    def up_next(self) -> Optional[Track[MetadataT]]:
+        """Optional[:class:`.Track`]: The next track in the queue.
+        This is ``None`` if there is no next track.
+        """
+        raise NotImplementedError
+
+    @property
+    def upcoming(self) -> List[Track[MetadataT]]:
+        """List[:class:`.Track`]: A list of all upcoming tracks in the queue."""
         raise NotImplementedError
 
     def is_empty(self) -> bool:
@@ -387,14 +421,27 @@ class ConsumptionQueue(BaseQueue[MetadataT], Generic[MetadataT]):
         factory: Callable[[], _InternalQueue[MetadataT]] = deque,
     ) -> None:
         self.max_size: Optional[int] = max_size
+        self._current: Optional[Track[MetadataT]] = None
         self._queue: _InternalQueue[MetadataT] = factory()
 
     @property
     def current(self) -> Optional[Track[MetadataT]]:
+        return self._current
+
+    @property
+    def up_next(self) -> Optional[Track[MetadataT]]:
         return None if self.is_empty() else self._queue[0]
 
-    def _get(self) -> Track[MetadataT]:
-        return self._queue.popleft()
+    @property
+    def upcoming(self) -> List[Track[MetadataT]]:
+        return list(self._queue)
+
+    def _get(self) -> Optional[Track[MetadataT]]:
+        try:
+            self._current = self._queue.popleft()
+        except IndexError:
+            return None
+        return self.current
 
     def copy(self: ConsumptionQueueT) -> ConsumptionQueueT:
         new = self.__class__(max_size=self.max_size)
@@ -429,6 +476,8 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
 
     Because this is the most common use case for queues, this is just named "Queue".
     For a queue that consumes tracks as they are retrieved, see :class:`.ConsumptionQueue`.
+
+    This also adds the ability for looping.
 
     Attributes
     ----------
@@ -488,6 +537,30 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
             return
 
         self.jump_to(value)
+
+    @property
+    def up_next(self) -> Optional[Track[MetadataT]]:
+        if self.loop_type is LoopType.track:
+            return self.current
+        try:
+            return self._queue[self._index + 1]
+        except IndexError:
+            return self._queue[0] if self.loop_type is LoopType.queue and not self.is_empty() else None
+
+    @property
+    def upcoming(self) -> List[Track[MetadataT]]:
+        result = []
+        index = self._index + 1
+
+        while True:
+            try:
+                result.append(self._queue[index])
+            except IndexError:
+                break
+
+            index += 1
+
+        return result
 
     def _get(self) -> Optional[Track[MetadataT]]:
         return self.current if self.loop_type is LoopType.track else self._skip()
@@ -563,3 +636,148 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
         new.current_index = self._index
         new._queue = self._queue.copy()
         return new
+
+
+def _waiter_cls(base: Type[BaseQueue[MetadataT]]) -> Type[BaseQueue[MetadataT]]:
+    # noinspection PyAbstractClass
+    @wraps(base, updated=())
+    class Wrapped(base):
+        __slots__ = ('_fut', '_loop')
+
+        _fut: Optional[asyncio.Future]
+        _loop: asyncio.AbstractEventLoop
+
+        def _dispatch(self) -> None:
+            if not self._fut or self._fut.done():
+                return
+
+            self._fut.set_result(None)
+
+        def _add(self, track: Track[MetadataT]) -> None:
+            super()._add(track)
+            self._dispatch()
+
+        def _insert(self, index: int, track: Track[MetadataT]) -> None:
+            super()._insert(index, track)
+            self._dispatch()
+
+        def cancel_waiter(self) -> None:
+            """Cancels the waiter in this queue.
+
+            In consequence, :exception:`asyncio.CancelledError` will be raised where you have awaited this waiter.
+            """
+            if self._fut:
+                self._fut.cancel()
+
+        def reset(self, *args: Any, **kwargs: Any) -> Any:
+            self.cancel_waiter()
+
+            if reset := getattr(super(), 'reset', None):
+                return reset(*args, **kwargs)
+
+        async def _start_wait(self, method: Callable[P, Optional[R]], *args: P.args, **kwargs: P.kwargs) -> R:
+            if self._fut is None or self._fut.done():
+                self._fut = self._loop.create_future()
+
+            try:
+                await self._fut
+            except asyncio.CancelledError:
+                self._fut = None
+                raise
+
+            result = method(*args, **kwargs)
+            assert result is not None
+            return result
+
+        async def get_wait(self) -> Track[MetadataT]:
+            # sourcery skip: assign-if-exp, reintroduce-else
+            """|coro|
+
+            Runs :meth:`get` but waits for a track to be available beforehand.
+            This guarantees the track returned will not be ``None``.
+
+            Returns
+            -------
+            :class:`Track`
+                The track that was retrieved.
+            """
+            if track := self.get():
+                return track
+
+            return await self._start_wait(self.get)
+
+        async def skip_wait(self) -> Track[MetadataT]:
+            # sourcery skip: assign-if-exp, reintroduce-else
+            """|coro|
+
+            Runs :meth:`skip` but waits for a track to be available beforehand.
+            This guarantees the track returned will not be ``None``.
+
+            Returns
+            -------
+            :class:`Track`
+                The track that was skipped.
+            """
+            if track := self.skip():
+                return track
+
+            return await self._start_wait(self.skip)
+
+        def copy(self: BaseQueueT) -> BaseQueueT:
+            copy = super().copy()
+            copy._fut = self._fut  # type: ignore
+            copy._loop = self._loop  # type: ignore
+            return copy
+
+    return Wrapped
+
+
+@_waiter_cls
+class WaitableConsumptionQueue(ConsumptionQueue[MetadataT], Generic[MetadataT]):
+    """A :class:`.ConsumptionQueue` that supports waiting for queues by storing a persistent :py:class:`asyncio.Future`.
+
+    See :class:`.ConsumptionQueue` for more information on parameters and attributes.
+
+    The only difference in the constructor signature is that it additionally takes a ``loop`` kwarg,
+    specifying the event loop in which wait-futures will be created upon. This is optional.
+    """
+
+    __slots__ = ('_fut', '_loop')
+
+    def __init__(
+        self,
+        *,
+        max_size: Optional[int] = None,
+        factory: Callable[[], _InternalQueue[MetadataT]] = deque,
+        loop: Optional[asyncio.AbstractEventLoop] = None,
+    ) -> None:
+        super().__init__(max_size=max_size, factory=factory)
+
+        self._fut = None
+        self._loop = loop or asyncio.get_event_loop()
+
+
+@_waiter_cls
+class WaitableQueue(Queue[MetadataT], Generic[MetadataT]):
+    """A :class:`.Queue` that supports waiting for queues by storing a persistent :py:class:`asyncio.Future`.
+
+    See :class:`.Queue` for more information on parameters and attributes.
+
+    The only difference in the constructor signature is that it additionally takes a ``loop`` kwarg,
+    specifying the event loop in which wait-futures will be created upon. This is optional.
+    """
+
+    __slots__ = ('_fut', '_loop')
+
+    def __init__(
+        self,
+        *,
+        max_size: Optional[int] = None,
+        loop_type: LoopType = LoopType.none,
+        factory: Callable[[], _InternalQueue[MetadataT]] = deque,
+        loop: Optional[asyncio.AbstractEventLoop] = None,
+    ) -> None:
+        super().__init__(max_size=max_size, loop_type=loop_type, factory=factory)
+
+        self._fut = None
+        self._loop = loop or asyncio.get_event_loop()

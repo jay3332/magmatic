@@ -284,6 +284,73 @@ MemoryStats
 .. autoclass:: MemoryStats()
     :members:
 
+Queues
+------
+
+Magmatic provides a set of preset, easy-to-use queue models.
+
+Quick Example: ::
+
+    # Use this as the player subclass
+    class PlayerWithQueue(magmatic.Player):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.queue = magmatic.Queue()
+
+        async def start_queue(self):
+            track = self.queue.get()
+            await self.play(track)
+
+        async def enqueue(self, track):
+            self.queue.add(track)
+
+            if not self.is_playing():
+                await self.start_queue()
+
+        async def on_track_end(self, event):
+            if event.may_start_next:
+                if track := self.queue.get():
+                    await self.play(track)
+
+    # later...
+    @bot.command()
+    async def play(ctx, *, track: magmatic.YoutubeTrack):
+        await ctx.voice_client.enqueue(track)
+
+BaseQueue
+~~~~~~~~~
+
+.. autoclass:: BaseQueue()
+    :members:
+
+ConsumptionQueue
+~~~~~~~~~~~~~~~~
+
+.. autoclass:: ConsumptionQueue
+    :members:
+    :inherited-members:
+
+Queue
+~~~~~
+
+.. autoclass:: Queue
+    :members:
+    :inherited-members:
+
+WaitableConsumptionQueue
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: WaitableConsumptionQueue
+    :members:
+    :inherited-members:
+
+WaitableQueue
+~~~~~~~~~~~~~
+
+.. autoclass:: WaitableQueue
+    :members:
+    :inherited-members:
+
 Enums
 -----
 
