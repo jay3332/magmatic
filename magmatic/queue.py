@@ -205,12 +205,12 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
         Parameters
         ----------
         index: int
-            The index of the track to pop.
+            The index of the track to removed.
 
         Returns
         -------
         :class:`Track`
-            The track that was popped.
+            The track that was removed.
         """
         if index < 0:
             index += len(self)
@@ -224,28 +224,19 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
         elif index - 1 == len(self):
             return self._queue.pop()
 
-        return self.remove(index)
+        track = self._queue[index]
+        del self._queue[index]
+        return track
 
-    def remove(self, item: Union[Track[MetadataT], int]) -> Track[MetadataT]:
+    def remove(self, item: Track[MetadataT]) -> None:
         """Removes a track (or track at a given index) from the queue.
 
         Parameters
         ----------
-        item: Union[:class:`Track`, int]
+        item: :class:`Track`
             The track to remove from the queue, or the index of the track to remove.
-
-        Returns
-        -------
-        :class:`Track`
-            The removed track.
         """
-        if isinstance(item, int):
-            track = self._queue[item]
-            del self._queue[item]
-            return track
-
         self._queue.remove(item)
-        return item
 
     def skip(self, count: int = 1) -> Optional[Track[MetadataT]]:
         """Skips the next track (or ``count`` number of tracks) in the queue and returns the new track.
@@ -501,6 +492,10 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
     def _get(self) -> Optional[Track[MetadataT]]:
         return self.current if self.loop_type is LoopType.track else self._skip()
 
+    def _insert(self, index: int, track: Track[MetadataT]) -> None:
+        if index <= self._index:
+            self._index += 1
+
     def _skip(self) -> Optional[Track[MetadataT]]:
         self._index += 1
 
@@ -519,6 +514,22 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
 
         return self.current
 
+    def remove_index(self, index: int = 0) -> Track[MetadataT]:
+        if not isinstance(index, int):
+            raise TypeError('index must be an int')
+
+        if index < self._index:
+            self._index -= 1
+
+        return super().remove_index(index)
+
+    def remove(self, item: Track[MetadataT]) -> None:
+        before = self.current
+        super().remove(item)
+
+        if before is not self.current:
+            self._index -= 1
+
     def reset(self, *, hard: bool = False) -> None:
         """Resets the queue pointer.
 
@@ -531,6 +542,17 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
             Defaults to ``False``.
         """
         self._index = -hard
+
+    def shift(self) -> None:
+        """Shifts the queue so that the first track is now the current track.
+
+        .. warning::
+            This will discard tracks that come before the current track in the queue.
+        """
+        for _ in range(self._index - 1):
+            self._queue.popleft()
+
+        self._index = 0
 
     def clear(self) -> None:
         super().clear()
