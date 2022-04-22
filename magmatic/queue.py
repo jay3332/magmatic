@@ -571,7 +571,7 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
             self._index += 1
 
     def _skip(self) -> Optional[Track[MetadataT]]:
-        if self.current is not None:
+        if self.current is None or self.current_index == -1:
             self._index += 1
 
         if self.current is None and self.loop_type is LoopType.queue:
