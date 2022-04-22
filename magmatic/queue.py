@@ -574,7 +574,7 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
         if self.current is None and self.loop_type is LoopType.queue:
             self._index = 0
 
-        if self.current is not None:
+        elif self.current is not None:
             self._index += 1
 
         return self.current
