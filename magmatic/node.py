@@ -756,7 +756,7 @@ class Node(Generic[ClientT]):
         """
         log.info(f'[Node {self.identifier!r}]: Disconnecting...')
 
-        for player in self._players.values():
+        for player in list(self._players.values()):
             await player.destroy(disconnect=disconnect_players)
 
         await self.connection.disconnect(reconnect=False)
