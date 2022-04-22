@@ -574,10 +574,14 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
         if self.up_next is not None or self.current_index is None:
             self._index += 1
 
+            return self.current
+
         if self.current is not None and self.up_next is None and self.loop_type is LoopType.queue:
             self._index = 0
 
-        return self.current
+            return self.current
+
+        return  # FIXME: Boilerplating return, bad.
 
     def jump_to(self, index: int) -> Track[MetadataT]:
         if not isinstance(index, int):
