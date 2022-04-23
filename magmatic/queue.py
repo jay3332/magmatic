@@ -61,6 +61,7 @@ if TYPE_CHECKING:
 __all__ = (
     'BaseQueue',
     'ConsumptionQueue',
+    'LoopType',
     'Queue',
     'WaitableConsumptionQueue',
     'WaitableQueue',
