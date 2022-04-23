@@ -74,7 +74,6 @@ async def test_waitable_queue(event_loop: AbstractEventLoop) -> None:
     queue = WaitableQueue(loop=event_loop)
 
     first = cast(Track, 1)
-
     queue.add(first)
 
     assert await queue.get_wait() == 1
