@@ -76,6 +76,7 @@ setup(
         ],
         'dev': [
             'pytest',
+            'pytest-asyncio',
         ]
     },
     python_requires='>=3.8',
