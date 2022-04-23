@@ -21,7 +21,7 @@ jobs:
           python -m pip install -U pip setuptools wheel
           pip install -U -r requirements.txt
           pip install -U git+https://github.com/rapptz/discord.py
-          pip install -U enum-tools pytest
+          pip install -U enum-tools pytest pytest-asyncio
 
       - name: Setup node.js
         uses: actions/setup-node@v2

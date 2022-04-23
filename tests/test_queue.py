@@ -1,8 +1,13 @@
-from typing import cast
+from __future__ import annotations
 
-from magmatic import Queue, Track, LoopType
+from typing import TYPE_CHECKING, cast
+
+from magmatic import ConsumptionQueue, Queue, WaitableQueue, Track, LoopType
 from magmatic.errors import QueueFull
 import pytest
+
+if TYPE_CHECKING:
+    from asyncio import AbstractEventLoop
 
 
 def test_queue_add_get() -> None:
@@ -53,3 +58,23 @@ def test_queue_max_size() -> None:
 
     with pytest.raises(QueueFull):
         queue.add(first)
+
+def test_consumption_queue() -> None:
+    queue = ConsumptionQueue()
+
+    first = cast(Track, 1)
+
+    queue.add(first)
+    queue.get()
+    
+    assert len(queue) == 0
+
+@pytest.mark.asyncio
+async def test_waitable_queue(event_loop: AbstractEventLoop) -> None:
+    queue = WaitableQueue(loop=event_loop)
+
+    first = cast(Track, 1)
+
+    queue.add(first)
+
+    assert await queue.get_wait() == 1
