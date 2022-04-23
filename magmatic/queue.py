@@ -577,7 +577,7 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
 
             return self.current
 
-        if self.current is not None and self.up_next is None and self.loop_type is LoopType.queue:
+        if self.current is not None and self.loop_type is LoopType.queue:
             self._index = 0
 
             return self.current
