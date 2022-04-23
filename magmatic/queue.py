@@ -188,8 +188,8 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
             if self.is_full():
                 if discard:
                     discarded.append(self._free())
-
-                raise QueueFull(self, track)
+                else:
+                    raise QueueFull(self, track)
 
             self._add(track)
 
@@ -414,7 +414,7 @@ class ConsumptionQueue(BaseQueue[MetadataT], Generic[MetadataT]):
         Defaults to the built-in :class:`collections.deque` itself.
     """
 
-    __slots__ = ('max_size', '_queue')
+    __slots__ = ('max_size', '_current', '_queue')
 
     def __init__(
         self,
@@ -565,24 +565,23 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
         return result
 
     def _get(self) -> Optional[Track[MetadataT]]:
-        return self.current if self.loop_type is LoopType.track else self._skip()
+        if self.loop_type is LoopType.track:
+            return self._skip() if self._index == -1 else self.current
+
+        return self._skip()
 
     def _insert(self, index: int, track: Track[MetadataT]) -> None:
         if index <= self._index:
             self._index += 1
 
     def _skip(self) -> Optional[Track[MetadataT]]:
-        if self.up_next is not None or self.current_index is None:
+        if self._index == -1 or self.current is not None:
             self._index += 1
 
-            return self.current
-
-        if self.current is not None and self.loop_type is LoopType.queue:
+        if self.current is None and self.loop_type is LoopType.queue:
             self._index = 0
 
-            return self.current
-
-        return  # FIXME: Boilerplating return, bad.
+        return self.current
 
     def jump_to(self, index: int) -> Track[MetadataT]:
         if not isinstance(index, int):
@@ -645,10 +644,10 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
         return new
 
 
-def _waiter_cls(base: Type[BaseQueue[MetadataT]]) -> Type[BaseQueue[MetadataT]]:
+def _waiter_cls(base: Type[BaseQueueT]) -> Type[BaseQueueT]:
     # noinspection PyAbstractClass
     @wraps(base, updated=())
-    class Wrapped(base):
+    class Wrapped(base):  # type: ignore
         __slots__ = ('_fut', '_loop')
 
         _fut: Optional[asyncio.Future]
@@ -660,11 +659,11 @@ def _waiter_cls(base: Type[BaseQueue[MetadataT]]) -> Type[BaseQueue[MetadataT]]:
 
             self._fut.set_result(None)
 
-        def _add(self, track: Track[MetadataT]) -> None:
+        def _add(self, track: Track) -> None:
             super()._add(track)
             self._dispatch()
 
-        def _insert(self, index: int, track: Track[MetadataT]) -> None:
+        def _insert(self, index: int, track: Track) -> None:
             super()._insert(index, track)
             self._dispatch()
 
@@ -696,7 +695,7 @@ def _waiter_cls(base: Type[BaseQueue[MetadataT]]) -> Type[BaseQueue[MetadataT]]:
             assert result is not None
             return result
 
-        async def get_wait(self) -> Track[MetadataT]:
+        async def get_wait(self) -> Track:
             # sourcery skip: assign-if-exp, reintroduce-else
             """|coro|
 
@@ -713,7 +712,7 @@ def _waiter_cls(base: Type[BaseQueue[MetadataT]]) -> Type[BaseQueue[MetadataT]]:
 
             return await self._start_wait(self.get)
 
-        async def skip_wait(self) -> Track[MetadataT]:
+        async def skip_wait(self) -> Track:
             # sourcery skip: assign-if-exp, reintroduce-else
             """|coro|
 
@@ -736,7 +735,7 @@ def _waiter_cls(base: Type[BaseQueue[MetadataT]]) -> Type[BaseQueue[MetadataT]]:
             copy._loop = self._loop  # type: ignore
             return copy
 
-        async def __aiter__(self) -> AsyncIterator[Track[MetadataT]]:
+        async def __aiter__(self) -> AsyncIterator[Track]:
             while True:
                 try:
                     yield await self.get_wait()
@@ -770,6 +769,12 @@ class WaitableConsumptionQueue(ConsumptionQueue[MetadataT], Generic[MetadataT]):
         self._fut = None
         self._loop = loop or asyncio.get_event_loop()
 
+    if TYPE_CHECKING:
+        def cancel_waiter(self) -> None: ...
+        async def get_wait(self) -> Track[MetadataT]: ...
+        async def skip_wait(self) -> Track[MetadataT]: ...
+        async def __aiter__(self) -> AsyncIterator[Track[MetadataT]]: ...
+
 
 @_waiter_cls
 class WaitableQueue(Queue[MetadataT], Generic[MetadataT]):
@@ -795,3 +800,9 @@ class WaitableQueue(Queue[MetadataT], Generic[MetadataT]):
 
         self._fut = None
         self._loop = loop or asyncio.get_event_loop()
+
+    if TYPE_CHECKING:
+        def cancel_waiter(self) -> None: ...
+        async def get_wait(self) -> Track[MetadataT]: ...
+        async def skip_wait(self) -> Track[MetadataT]: ...
+        async def __aiter__(self) -> AsyncIterator[Track[MetadataT]]: ...
