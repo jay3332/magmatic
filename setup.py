@@ -74,6 +74,9 @@ setup(
             'sphinx-toolbox',
             'enum-tools',
         ],
+        'dev': [
+            'pytest',
+        ]
     },
     python_requires='>=3.8',
     classifiers=[
