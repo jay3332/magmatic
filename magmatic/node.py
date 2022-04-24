@@ -550,6 +550,9 @@ class Node(Generic[ClientT]):
         resume: bool = False,
         serializer: JSONSerializer[Dict[str, Any]] = json,
     ) -> None:
+        if not bot.intents.voice_states:
+            raise RuntimeError('bot does not have the voice_states intent.')
+
         self.bot: ClientT = bot
         self.identifier: str = identifier or os.urandom(8).hex()
         self.region: Optional[str] = region
