@@ -471,7 +471,7 @@ def filter_property(key: str, cls: Type[FilterT]) -> Callable[
     def decorator(func: Callable[..., Optional[FilterT]]) -> FilterProperty[FilterT, FilterT]:
         def getter(self: FilterSink) -> Optional[FilterT]:
             resolved = self._filters.get(key)
-            assert isinstance(resolved, cls)
+            assert resolved is None or isinstance(resolved, cls)
             return resolved
 
         getter.__filter_property__ = True
