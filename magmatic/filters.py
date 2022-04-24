@@ -50,6 +50,9 @@ __all__ = (
     'PitchMultiplier',
     'PitchOctaves',
     'PitchSemitones',
+    'RotationFilter',
+    'VibratoFilter',
+    'TremoloFilter',
 )
 
 
@@ -336,18 +339,18 @@ class PitchMultiplier(_TimescalePitchValue):
 
 class PitchOctaves(_TimescalePitchValue):
     def __float__(self) -> float:
-        return 2 ** self._value
+        return float(2 ** self._value)
 
 
 class PitchSemitones(_TimescalePitchValue):
     def __float__(self) -> float:
-        return 2 ** (self._value / 12)
+        return float(2 ** (self._value / 12))
 
 
 class TimescaleFilter(BaseFilter):
     """A filter which modifies the piatch, speed, and rate of the audio.
 
-    All parameters are optional and default to ``1.0``.
+    All parameters are optional and default to ``1.0``. (No change)
 
     Parameters
     ----------
@@ -465,6 +468,167 @@ class TimescaleFilter(BaseFilter):
         }
 
 
+class RotationFilter(BaseFilter):
+    """A filter which simulates an audio source rotating around the listener using audio panning.
+
+    Parameters
+    ----------
+    hz: float
+        The hertz ("revolutions" per second) at which to rotate the audio. Defaults to ``5.0``.
+    """
+
+    __slots__ = ('_hz',)
+
+    key = 'rotation'
+    _repr_attrs = ('hz',)
+
+    if TYPE_CHECKING:
+        _hz: float
+
+    def __init__(self, *, hz: float = 5.0) -> None:
+        self.hz = hz
+
+    @property
+    def hz(self) -> float:
+        """:class:`float`: The hertz ("revolutions" per second) at which to rotate the audio."""
+        return self._hz
+
+    @hz.setter
+    def hz(self, value: float) -> None:
+        if value < 0:
+            raise ValueError('hz cannot be negative')
+
+        self._hz = value
+
+    def to_dict(self) -> NumberDict:
+        return {
+            'rotationHz': self.hz,
+        }
+
+
+class VibratoFilter(BaseFilter):
+    """A filter which oscillates the pitch. Similar to :class:`.TremoloFilter` which oscillates the volume.
+
+    All parameters are keyword-only.
+
+    Parameters
+    ----------
+    frequency: float
+        The frequency at which to oscillate the pitch. Must be greater than ``0.0`` and at most ``14.0``, and defaults to ``2.0``.
+    depth: float
+        The depth/intensity of this filter. Must be greater than ``0.0`` and at most ``1.0``, defaults to ``0.5``.
+    """
+
+    __slots__ = ('_frequency', '_depth')
+
+    key = 'vibrato'
+    _repr_attrs = ('frequency', 'depth')
+
+    if TYPE_CHECKING:
+        _frequency: float
+        _depth: float
+
+    def __init__(self, *, frequency: float = 2.0, depth: float = 0.5) -> None:
+        self.frequency = frequency
+        self.depth = depth
+
+    @property
+    def frequency(self) -> float:
+        """:class:`float`: The frequency at which to oscillate the pitch."""
+        return self._frequency
+
+    @frequency.setter
+    def frequency(self, value: float) -> None:
+        if value <= 0.0:
+            raise ValueError('frequency must be greater than 0.0')
+
+        if value > 14.0:
+            raise ValueError('frequency must be at most 14.0')
+
+        self._frequency = value
+
+    @property
+    def depth(self) -> float:
+        """:class:`float`: The depth/intensity of this filter."""
+        return self._depth
+
+    @depth.setter
+    def depth(self, value: float) -> None:
+        if value <= 0.0:
+            raise ValueError('depth must be greater than 0.0')
+
+        if value > 1.0:
+            raise ValueError('depth must be at most 1.0')
+
+        self._depth = value
+
+    def to_dict(self) -> NumberDict:
+        return {
+            'frequency': self.frequency,
+            'depth': self.depth,
+        }
+
+
+class TremoloFilter(BaseFilter):
+    """A filter which oscillates the volume. Similar to :class:`.VibratoFilter` which oscillates the pitch.
+
+    All parameters are keyword-only.
+
+    Parameters
+    ----------
+    frequency: float
+        The frequency at which to oscillate the volume. Must be greater than ``0.0`` and defaults to ``2.0``.
+    depth: float
+        The depth/intensity of this filter. Must be greater than ``0.0`` and at most ``1.0``, defaults to ``0.5``.
+    """
+
+    __slots__ = ('_frequency', '_depth')
+
+    key = 'tremolo'
+    _repr_attrs = ('frequency', 'depth')
+
+    if TYPE_CHECKING:
+        _frequency: float
+        _depth: float
+
+    def __init__(self, *, frequency: float = 2.0, depth: float = 0.5) -> None:
+        self.frequency = frequency
+        self.depth = depth
+
+    @property
+    def frequency(self) -> float:
+        """:class:`float`: The frequency at which to oscillate the volume."""
+        return self._frequency
+
+    @frequency.setter
+    def frequency(self, value: float) -> None:
+        if value > 14.0:
+            raise ValueError('frequency must be at most 14.0')
+
+        self._frequency = value
+
+    @property
+    def depth(self) -> float:
+        """:class:`float`: The depth/intensity of this filter."""
+        return self._depth
+
+    @depth.setter
+    def depth(self, value: float) -> None:
+        if value <= 0.0:
+            raise ValueError('depth must be greater than 0.0')
+
+        if value > 1.0:
+            raise ValueError('depth must be at most 1.0')
+
+        self._depth = value
+
+    def to_dict(self) -> NumberDict:
+        return {
+            'frequency': self.frequency,
+            'depth': self.depth,
+        }
+
+
 def filter_property(key: str, cls: Type[FilterT]) -> Callable[
     [Callable[..., Optional[FilterT]]], FilterProperty[FilterT, FilterT]
 ]:
@@ -571,6 +735,36 @@ class FilterSink:
         -------
         Optional[:class:`.TimescaleFilter`]
             The timescale filter instance. ``None`` if there is no timescale filter.
+        """
+
+    @filter_property('rotation', RotationFilter)
+    def rotation(self) -> Optional[RotationFilter]:
+        """The rotation filter of this sink.
+
+        Returns
+        -------
+        Optional[:class:`.RotationFilter`]
+            The rotation filter instance. ``None`` if there is no rotation filter.
+        """
+
+    @filter_property('vibrato', VibratoFilter)
+    def vibrato(self) -> Optional[VibratoFilter]:
+        """The vibrato filter of this sink.
+
+        Returns
+        -------
+        Optional[:class:`.VibratoFilter`]
+            The vibrato filter instance. ``None`` if there is no vibrato filter.
+        """
+
+    @filter_property('tremolo', TremoloFilter)
+    def tremolo(self) -> Optional[TremoloFilter]:
+        """The tremolo filter of this sink.
+
+        Returns
+        -------
+        Optional[:class:`.TremoloFilter`]
+            The tremolo filter instance. ``None`` if there is no tremolo filter.
         """
 
     def add(self, *filters: BaseFilter) -> None:

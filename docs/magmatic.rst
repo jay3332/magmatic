@@ -126,6 +126,27 @@ TimescaleFilter
     :members:
     :inherited-members:
 
+RotationFilter
+~~~~~~~~~~~~~~
+
+.. autoclass:: RotationFilter
+    :members:
+    :inherited-members:
+
+VibratoFilter
+~~~~~~~~~~~~~
+
+.. autoclass:: VibratoFilter
+    :members:
+    :inherited-members:
+
+TremoloFilter
+~~~~~~~~~~~~~
+
+.. autoclass:: TremoloFilter
+    :members:
+    :inherited-members:
+
 Event Models
 ------------
 

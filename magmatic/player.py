@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Awaitable, Callable, Dict, Generic, Optional, TYPE_CHECKING, Type, TypeVar, Union
+from typing import Any, Awaitable, Callable, Dict, Generic, Optional, TYPE_CHECKING, Type, TypeVar
 
 import discord
 from discord import VoiceProtocol

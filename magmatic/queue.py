@@ -299,7 +299,7 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
 
         return self._skip()
 
-    def insert(self, index: int, item: Enqueueable[MetadataT]) -> None:    # type: ignore
+    def insert(self, index: int, item: Enqueueable[MetadataT]) -> None:  # type: ignore
         """Inserts a track or playlist into the queue at the specified index.
 
         .. note::
