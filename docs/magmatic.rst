@@ -366,6 +366,12 @@ LoadSource
 .. autoenum:: LoadSource()
     :members:
 
+LoopType
+~~~~~~~~
+
+.. autoenum:: LoopType()
+    :members:
+
 LoadType
 ~~~~~~~~
 
