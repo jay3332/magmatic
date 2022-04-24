@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Union  # If you're using 3.8 import Annotated from typing_extensions, not typing.
 
 import discord
 import magmatic
@@ -64,7 +64,7 @@ async def leave(ctx):
 # We use typing.Annotated to give discord.py the YoutubeTrack converter but let the type-checker know that
 # track is still an instance of a normal Track (or Playlist).
 @bot.command()
-async def play(ctx, *, track: Annotated[magmatic.Track | magmatic.Playlist, magmatic.YoutubeTrack]):
+async def play(ctx, *, track: Annotated[Union[magmatic.Track, magmatic.Playlist], magmatic.YoutubeTrack]):
     """Plays the track given from your search query."""
     if ctx.voice_client is None:
         await ctx.invoke(join)
