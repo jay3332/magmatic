@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC
-from collections import deque
 from enum import IntEnum
 from functools import wraps
 from typing import (
@@ -19,11 +18,23 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
 )
 
 from .errors import QueueFull
 from .track import Playlist, Track
+from .utils import IS_DOCUMENTING
 
+if IS_DOCUMENTING:
+    class _Deque:
+        def __repr__(self):
+            return 'deque'
+
+    deque = _Deque()
+else:
+    from collections import deque
+
+deque = cast('Callable[[], _InternalQueue[Any]]', deque)
 MetadataT = TypeVar('MetadataT')
 
 if TYPE_CHECKING:
@@ -483,7 +494,7 @@ class Queue(BaseQueue[MetadataT], Generic[MetadataT]):
 
     Attributes
     ----------
-    max_size: Optional[:clas:`int`]
+    max_size: Optional[:class:`int`]
         The maximum amount of tracks this queue can hold. ``None`` if no
         limit was set.
     loop_type: :class:`.LoopType`

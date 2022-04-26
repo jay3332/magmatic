@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
+
 from typing import Any, Coroutine, Dict, Final, Generic, Iterator, List, Optional, TYPE_CHECKING, Type, TypeVar, Union
 
 from discord import Client
@@ -10,6 +10,19 @@ from discord.utils import copy_doc
 from .errors import NoAvailableNodes, NoMatchingNodes, NodeConflict, PlayerNotFound
 from .node import JSONSerializer, Node
 from .player import Player
+from .utils import IS_DOCUMENTING
+
+if IS_DOCUMENTING:
+    class _JsonModule:
+        loads: Any
+        dumps: Any
+
+        def __repr__(self) -> str:
+            return '<json module>'
+
+    json = _JsonModule()
+else:
+    import json
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
@@ -136,7 +149,7 @@ class NodePool(Generic[ClientT]):
             An object/module with two methods: ``loads`` and ``dumps`` which serializes
             and deserializes JSON data.
 
-            Defaults to the standard :module:`json` module.
+            Defaults to the standard :mod:`json` module.
 
         Returns
         -------
@@ -233,7 +246,7 @@ class NodePool(Generic[ClientT]):
             An object/module with two methods: ``loads`` and ``dumps`` which serializes
             and deserializes JSON data.
 
-            Defaults to the standard :module:`json` module.
+            Defaults to the standard :mod:`json` module.
 
         Returns
         -------

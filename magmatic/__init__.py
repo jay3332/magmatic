@@ -1,4 +1,4 @@
-from . import filters as filters
+from . import filters as filters, utils as utils
 from .enums import *
 from .events import *
 from .errors import *
