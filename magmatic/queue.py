@@ -179,7 +179,7 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
             The track or playlist to add to the queue.
         discard: bool
             Whether to discard another track if the queue is full.
-            If this is ``False`` (the default), :exception:`QueueFull` will be raised instead.
+            If this is ``False`` (the default), :exc:`QueueFull` will be raised instead.
 
         Returns
         -------
@@ -217,7 +217,7 @@ class BaseQueue(Iterable[Track[MetadataT]], Generic[MetadataT], ABC):
             An iterable (i.e. a :py:class:`list`) of tracks or playlists to add to the queue.
         discard: bool
             Whether to discard another track if the queue is full.
-            If this is ``False`` (the default), :exception:`QueueFull` will be raised instead.
+            If this is ``False`` (the default), :exc:`QueueFull` will be raised instead.
 
         Returns
         -------
@@ -681,7 +681,7 @@ def _waiter_cls(base: Type[BaseQueueT]) -> Type[BaseQueueT]:
         def cancel_waiter(self) -> None:
             """Cancels the waiter in this queue.
 
-            In consequence, :exception:`asyncio.CancelledError` will be raised where you have awaited this waiter.
+            In consequence, :exc:`asyncio.CancelledError` will be raised where you have awaited this waiter.
             """
             if self._fut:
                 self._fut.cancel()
