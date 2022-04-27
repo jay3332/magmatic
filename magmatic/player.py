@@ -507,7 +507,9 @@ class Player(VoiceProtocol, Generic[ClientT]):
         """
         log.debug(f'[Node {self.node.identifier!r}] Seeking to {position}s in guild ID {self.guild_id}')
         await self.node.connection.send_seek(guild_id=self.guild_id, position=int(position * 1000))
+
         self._previous_position = position
+        self._previous_update_time = time.time()
 
     async def stop(self) -> None:
         """|coro|
