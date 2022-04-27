@@ -12,13 +12,14 @@ Join our support server if you have any questions:
     :target: https://discord.gg/FqtZ6akWpd
     :alt: Magmatic's Discord server
 
-
+Contents
+========
 
 .. toctree::
     :maxdepth: 2
-    :caption: API Reference
 
-    magmatic.rst
+    Installation <installation.rst>
+    API Reference <magmatic.rst>
 
 Index
 =====
