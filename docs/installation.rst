@@ -17,6 +17,9 @@ Standard installation (PyPI)
 The following will install the latest **stable** version of magmatic.
 This is recommended.
 
+From terminal:
+++++++++++++++
+
 .. tab:: Windows
 
     .. code:: bash
@@ -54,6 +57,9 @@ Note that installing from GitHub will likely install an unstable version of magm
 Install using the standard method above if you with to use the stable version.
 
 The following installs magmatic from GitHub:
+
+From terminal:
+++++++++++++++
 
 .. tab:: Windows
 
