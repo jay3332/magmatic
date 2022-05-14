@@ -130,7 +130,7 @@ class Track(Generic[MetadataT]):
         # Lavaplayer doesn't properly support artworkUri on the master branch.
         # Until then, this property will have to be implemented manually.
         if self.source is LoadSource.youtube:
-            return f'https://img.youtube.com/vi/{self.identifier}/0.jpg'
+            return f'https://i.ytimg.com/vi/{self.identifier}/hq720.jpg'
 
     def is_stream(self) -> bool:
         """bool: Returns ``True`` if this track is a stream."""
